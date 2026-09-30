@@ -1,0 +1,168 @@
+syntax = "proto3";
+
+package review.v1;
+
+option go_package = "github.com/fleamarket/api/review/v1;reviewv1";
+
+import "google/api/annotations.proto";
+import "buf/validate/validate.proto";
+import "common/v1/common.proto";
+
+// ReportService 举报与敏感词库管理。
+service ReportService {
+  // 提交举报。任何登录用户可举报商品、用户、消息等。
+  rpc CreateReport(CreateReportRequest) returns (Report) {
+    option (google.api.http) = {
+      post: "/v1/reports"
+      body: "*"
+    };
+  }
+
+  // 举报工单列表。供 admin 后台。
+  rpc ListReports(ListReportsRequest) returns (ListReportsReply) {
+    option (google.api.http) = {get: "/v1/admin/reports"};
+  }
+
+  // 处置举报。供 admin 后台。
+  rpc HandleReport(HandleReportRequest) returns (Report) {
+    option (google.api.http) = {
+      post: "/v1/admin/reports/{report_id}/handle"
+      body: "*"
+    };
+  }
+
+  // 敏感词列表。供 admin 后台。
+  rpc ListSensitiveWords(ListSensitiveWordsRequest) returns (ListSensitiveWordsReply) {
+    option (google.api.http) = {get: "/v1/admin/sensitive-words"};
+  }
+
+  // 新增敏感词。变更后经 Pub/Sub 通知各实例热更新词库。
+  rpc AddSensitiveWord(AddSensitiveWordRequest) returns (SensitiveWord) {
+    option (google.api.http) = {
+      post: "/v1/admin/sensitive-words"
+      body: "*"
+    };
+  }
+
+  // 删除敏感词。
+  rpc DeleteSensitiveWord(DeleteSensitiveWordRequest) returns (DeleteSensitiveWordReply) {
+    option (google.api.http) = {delete: "/v1/admin/sensitive-words/{word_id}"};
+  }
+}
+
+// ReportReason 举报原因。
+enum ReportReason {
+  REPORT_REASON_UNSPECIFIED = 0;
+  // 虚假信息。
+  REPORT_REASON_FAKE = 1;
+  // 诈骗。
+  REPORT_REASON_FRAUD = 2;
+  // 骚扰。
+  REPORT_REASON_HARASSMENT = 3;
+  // 违禁品。
+  REPORT_REASON_PROHIBITED = 4;
+  // 学术不端（代写代考等）。
+  REPORT_REASON_ACADEMIC_MISCONDUCT = 5;
+  // 垃圾广告。
+  REPORT_REASON_SPAM = 6;
+  REPORT_REASON_OTHER = 99;
+}
+
+// ReportStatus 举报状态。
+enum ReportStatus {
+  REPORT_STATUS_UNSPECIFIED = 0;
+  // 待处理。
+  REPORT_STATUS_PENDING = 1;
+  // 已处理（举报属实，已对目标采取措施）。
+  REPORT_STATUS_ACTIONED = 2;
+  // 已驳回（举报不属实）。
+  REPORT_STATUS_DISMISSED = 3;
+}
+
+// SensitiveWordCategory 敏感词分类。
+enum SensitiveWordCategory {
+  SENSITIVE_WORD_CATEGORY_UNSPECIFIED = 0;
+  // 违禁品。
+  SENSITIVE_WORD_CATEGORY_PROHIBITED = 1;
+  // 联系方式（诱导私下交易）。
+  SENSITIVE_WORD_CATEGORY_CONTACT = 2;
+  // 学术不端。
+  SENSITIVE_WORD_CATEGORY_ACADEMIC = 3;
+  // 涉政涉黄。
+  SENSITIVE_WORD_CATEGORY_POLITICAL_PORN = 4;
+}
+
+message CreateReportRequest {
+  // 举报对象类型，复用 moderation 的 TargetType 语义但此处独立定义避免跨文件耦合。
+  int32 target_type = 1 [(buf.validate.field).int32 = {gte: 1, lte: 4}];
+  int64 target_id = 2 [(buf.validate.field).int64.gt = 0];
+  ReportReason reason = 3 [(buf.validate.field).enum = {defined_only: true, not_in: [0]}];
+  string description = 4 [(buf.validate.field).string.max_len = 500];
+  // 证据图片的 object_key，最多 3 张。
+  repeated string image_keys = 5 [(buf.validate.field).repeated.max_items = 3];
+}
+
+message ListReportsRequest {
+  ReportStatus status = 1;
+  common.v1.PageRequest page = 2;
+}
+
+message ListReportsReply {
+  repeated Report reports = 1;
+  common.v1.PageReply page = 2;
+}
+
+message HandleReportRequest {
+  int64 report_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 是否采信举报。
+  bool actioned = 2;
+  string handle_result = 3 [(buf.validate.field).string.max_len = 255];
+}
+
+message ListSensitiveWordsRequest {
+  SensitiveWordCategory category = 1;
+  common.v1.PageRequest page = 2;
+}
+
+message ListSensitiveWordsReply {
+  repeated SensitiveWord words = 1;
+  common.v1.PageReply page = 2;
+}
+
+message AddSensitiveWordRequest {
+  string word = 1 [(buf.validate.field).string = {min_len: 1, max_len: 64}];
+  SensitiveWordCategory category = 2 [(buf.validate.field).enum = {defined_only: true, not_in: [0]}];
+  // 处置级别：1 告警 2 复审 3 拦截。
+  int32 level = 3 [(buf.validate.field).int32 = {gte: 1, lte: 3}];
+}
+
+message DeleteSensitiveWordRequest {
+  int64 word_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message DeleteSensitiveWordReply {}
+
+// Report 一条举报。
+message Report {
+  int64 report_id = 1;
+  int64 reporter_id = 2;
+  int32 target_type = 3;
+  int64 target_id = 4;
+  ReportReason reason = 5;
+  string description = 6;
+  repeated string image_keys = 7;
+  ReportStatus status = 8;
+  int64 handled_by = 9;
+  string handle_result = 10;
+  int64 created_at = 11;
+  int64 handled_at = 12;
+}
+
+// SensitiveWord 一条敏感词。
+message SensitiveWord {
+  int64 word_id = 1;
+  string word = 2;
+  SensitiveWordCategory category = 3;
+  int32 level = 4;
+  int64 created_at = 5;
+}

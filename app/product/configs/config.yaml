@@ -1,0 +1,86 @@
+server:
+  http:
+    addr: 0.0.0.0:8002
+    timeout: 3s
+  grpc:
+    addr: 0.0.0.0:9002
+    timeout: 3s
+
+data:
+  database:
+    # 凭据不写入配置文件，由环境变量注入。此处默认值仅用于本地 docker-compose。
+    source: ${DB_SOURCE:fleamarket:fleamarket@tcp(127.0.0.1:3306)/fleamarket?charset=utf8mb4&parseTime=True&loc=Local}
+    max_open_conns: 50
+    max_idle_conns: 10
+    conn_max_lifetime: 3600s
+    slow_threshold: 0.2s
+    debug: true
+  redis:
+    addr: ${REDIS_ADDR:127.0.0.1:6379}
+    password: ${REDIS_PASSWORD:}
+    db: 0
+    pool_size: 20
+    read_timeout: 0.2s
+    write_timeout: 0.2s
+    # 多环境共用 Redis 实例时用于隔离。
+    key_prefix: ${REDIS_PREFIX:fleamarket:dev:product}
+
+registry:
+  etcd:
+    endpoints:
+      - ${ETCD_ENDPOINT:127.0.0.1:2379}
+    dial_timeout: 5s
+    # 必须按环境隔离：若 dev 与 prod 共用前缀，
+    # 开发机启动的实例会被生产流量发现并调用。
+    namespace: ${ETCD_NAMESPACE:/fleamarket/dev}
+    ttl: 15s
+
+observability:
+  environment: ${APP_ENV:dev}
+  log:
+    level: ${LOG_LEVEL:debug}
+    format: ${LOG_FORMAT:text}
+    add_source: true
+  trace:
+    # 布尔字段不能用 ${VAR:default} 占位：kratos 的环境变量替换产出字符串，
+    # 而 protojson 对 bool 只接受 true/false 字面量。需要按环境切换时
+    # 用独立的 config 文件覆盖，而不是环境变量。
+    enabled: false
+    endpoint: ${OTLP_ENDPOINT:127.0.0.1:4318}
+    sample_ratio: 1.0
+    insecure: true
+
+auth:
+  # 注意 Duration 必须写成 protobuf JSON 的秒数形式（如 7200s），
+  # "2h" 这类 Go duration 写法会被 protojson 拒绝。
+  # 至少 32 字节，否则服务拒绝启动。生产环境必须由密钥管理服务注入。
+  jwt_secret: ${JWT_SECRET:dev-only-jwt-secret-at-least-32-bytes-long}
+  access_ttl: 7200s
+  refresh_ttl: 2592000s
+
+storage:
+  endpoint: ${S3_ENDPOINT:127.0.0.1:9000}
+  access_key: ${S3_ACCESS_KEY:fleamarket}
+  secret_key: ${S3_SECRET_KEY:fleamarket}
+  use_ssl: false
+  region: ""
+  # 商品图需公开可读，放 public 桶；学生证等敏感材料在 user-service 的 private 桶。
+  bucket: ${S3_BUCKET:fleamarket-public}
+  public_base_url: ${S3_PUBLIC_BASE_URL:}
+  process_query_key: x-oss-process
+
+downstream:
+  user:
+    name: user-service
+    timeout: 3s
+  review:
+    name: review-service
+    timeout: 3s
+
+business:
+  # 雪花 ID 节点号。必须与其他服务/实例不同，否则会产生重复 ID。
+  worker_id: ${WORKER_ID:2}
+  mq_namespace: ${MQ_NAMESPACE:fleamarket:dev}
+  # 热度重算窗口与批大小（doc.md §9.3）。
+  heat_window: 604800s
+  heat_batch_size: 500

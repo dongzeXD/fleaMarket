@@ -1,0 +1,34 @@
+# Go
+bin/
+*.exe
+*.test
+*.out
+vendor/
+go.work.sum
+
+# 生成物：proto 产出的 Go/TS 代码不入库，由 make api 重新生成
+docs/descriptor.binpb
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+.turbo/
+*.tsbuildinfo
+.pnpm-store/
+
+# 环境与密钥
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# 本地数据卷
+.data/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store

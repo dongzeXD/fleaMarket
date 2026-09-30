@@ -1,0 +1,159 @@
+syntax = "proto3";
+
+// review.v1 内容安全域：自动审核、举报、敏感词管理。
+package review.v1;
+
+option go_package = "github.com/fleamarket/api/review/v1;reviewv1";
+
+import "google/api/annotations.proto";
+import "buf/validate/validate.proto";
+import "common/v1/common.proto";
+
+// ModerationService 内容审核。
+//
+// 审核分两层（doc.md §9.6）：
+//   - 自动审核：AC 自动机敏感词匹配。BLOCK 级直接驳回，
+//     REVIEW 级转人工，无命中则自动通过。
+//   - 人工审核：由运营在 admin 后台处理转人工的工单。
+//
+// SubmitProduct 等提交接口是内部接口，由各业务服务调用；
+// 工单处置接口供 admin-service 调用。
+service ModerationService {
+  // 提交商品送审。内部接口，product-service 调用。
+  //
+  // 返回 immediate=true 表示同步得出结论（无命中或命中 BLOCK），
+  // 此时 passed 有效；immediate=false 表示转人工，结论稍后经 MQ 回写。
+  rpc SubmitProduct(SubmitProductRequest) returns (SubmitReply) {}
+
+  // 提交求购帖送审。内部接口。
+  rpc SubmitWanted(SubmitWantedRequest) returns (SubmitReply) {}
+
+  // 同步检查一段文本。内部接口，im-service 在发消息前调用。
+  //
+  // 与 Submit 系列不同，它不生成工单、不落库，只做一次纯匹配，
+  // 因此可以在消息发送的关键路径上以极低延迟调用（超时 300ms 放行）。
+  rpc CheckText(CheckTextRequest) returns (CheckTextReply) {}
+
+  // 人工审核工单列表。供 admin 后台。
+  rpc ListTasks(ListTasksRequest) returns (ListTasksReply) {
+    option (google.api.http) = {get: "/v1/admin/moderation/tasks"};
+  }
+
+  // 处置人工审核工单。供 admin 后台。
+  rpc DecideTask(DecideTaskRequest) returns (ModerationTask) {
+    option (google.api.http) = {
+      post: "/v1/admin/moderation/tasks/{task_id}/decide"
+      body: "*"
+    };
+  }
+}
+
+// TargetType 审核对象类型。
+enum TargetType {
+  TARGET_TYPE_UNSPECIFIED = 0;
+  TARGET_TYPE_PRODUCT = 1;
+  TARGET_TYPE_WANTED = 2;
+  TARGET_TYPE_MESSAGE = 3;
+  TARGET_TYPE_USER_PROFILE = 4;
+}
+
+// ModerationLevel 审核处置级别，对应敏感词的三档。
+enum ModerationLevel {
+  MODERATION_LEVEL_UNSPECIFIED = 0;
+  // 仅告警，放行。
+  MODERATION_LEVEL_WARN = 1;
+  // 转人工复审。
+  MODERATION_LEVEL_REVIEW = 2;
+  // 直接拦截。
+  MODERATION_LEVEL_BLOCK = 3;
+}
+
+// TaskStatus 工单状态。
+enum TaskStatus {
+  TASK_STATUS_UNSPECIFIED = 0;
+  // 自动通过。
+  TASK_STATUS_AUTO_PASSED = 1;
+  // 自动驳回（命中 BLOCK）。
+  TASK_STATUS_AUTO_REJECTED = 2;
+  // 待人工审核。
+  TASK_STATUS_PENDING = 3;
+  // 人工通过。
+  TASK_STATUS_MANUAL_PASSED = 4;
+  // 人工驳回。
+  TASK_STATUS_MANUAL_REJECTED = 5;
+}
+
+message SubmitProductRequest {
+  int64 product_id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 seller_id = 2 [(buf.validate.field).int64.gt = 0];
+  string title = 3;
+  string description = 4;
+}
+
+message SubmitWantedRequest {
+  int64 wanted_id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 user_id = 2 [(buf.validate.field).int64.gt = 0];
+  string title = 3;
+  string description = 4;
+}
+
+message SubmitReply {
+  // 是否同步得出结论。
+  bool immediate = 1;
+  // immediate 为 true 时有效：是否通过。
+  bool passed = 2;
+  // 驳回原因（面向用户的可读文案）。
+  string reject_reason = 3;
+  // 命中的违规词。用于向发布者说明具体问题。
+  repeated string hit_words = 4;
+}
+
+message CheckTextRequest {
+  string text = 1 [(buf.validate.field).string.max_len = 2000];
+}
+
+message CheckTextReply {
+  // 建议的处置级别。
+  ModerationLevel level = 1;
+  // 是否应放行。level 为 WARN 及以下放行。
+  bool passed = 2;
+  repeated string hit_words = 3;
+}
+
+message ListTasksRequest {
+  // 只看某状态，0 表示全部（但默认应传 PENDING 看待处理工单）。
+  TaskStatus status = 1;
+  TargetType target_type = 2;
+  common.v1.PageRequest page = 3;
+}
+
+message ListTasksReply {
+  repeated ModerationTask tasks = 1;
+  common.v1.PageReply page = 2;
+}
+
+message DecideTaskRequest {
+  int64 task_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 是否通过。
+  bool pass = 2;
+  string reason = 3 [(buf.validate.field).string.max_len = 255];
+}
+
+// ModerationTask 一条审核记录。
+message ModerationTask {
+  int64 task_id = 1;
+  TargetType target_type = 2;
+  int64 target_id = 3;
+  // 内容所属用户，用于统计某用户的违规频次。
+  int64 owner_id = 4;
+  TaskStatus status = 5;
+  // 自动审核命中的处置级别。
+  ModerationLevel auto_level = 6;
+  repeated string hit_words = 7;
+  // 送审内容摘要，供人工审核时查看。
+  string content = 8;
+  int64 reviewer_id = 9;
+  string reject_reason = 10;
+  int64 created_at = 11;
+  int64 decided_at = 12;
+}

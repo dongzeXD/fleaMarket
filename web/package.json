@@ -1,0 +1,22 @@
+{
+  "name": "fleamarket-web",
+  "private": true,
+  "description": "校园跳蚤市场前端 monorepo",
+  "scripts": {
+    "dev": "pnpm --filter @fleamarket/web dev",
+    "build": "pnpm -r --filter=!@fleamarket/web build && pnpm --filter @fleamarket/web build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md,css}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,json,md,css}\""
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "prettier": "3.4.2",
+    "typescript": "5.7.3"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@12.8.1"
+}

@@ -1,0 +1,176 @@
+syntax = "proto3";
+
+package user.v1;
+
+option go_package = "github.com/fleamarket/api/user/v1;userv1";
+
+import "google/api/annotations.proto";
+import "buf/validate/validate.proto";
+import "common/v1/common.proto";
+
+// CampusAuthService 校园身份认证。
+//
+// 这是整个平台的信任基石：未通过认证的账号只能浏览，不能发布商品、不能发起会话。
+// 提供两条认证路径，校园邮箱可自动通过，学号需人工审核。
+service CampusAuthService {
+  // 查询学校列表，供客户端选择。支持按名称模糊搜索。
+  rpc ListSchools(ListSchoolsRequest) returns (ListSchoolsReply) {
+    option (google.api.http) = {get: "/v1/schools"};
+  }
+
+  // 查询指定学校下的校区列表。
+  rpc ListCampuses(ListCampusesRequest) returns (ListCampusesReply) {
+    option (google.api.http) = {get: "/v1/schools/{school_id}/campuses"};
+  }
+
+  // 发起校园邮箱认证。
+  //
+  // 服务端校验邮箱域名后缀命中该校白名单后，发送一封含签名链接的邮件，
+  // 链接 30 分钟内有效且仅可使用一次。
+  rpc StartEmailAuth(StartEmailAuthRequest) returns (StartEmailAuthReply) {
+    option (google.api.http) = {
+      post: "/v1/campus-auth/email"
+      body: "*"
+    };
+  }
+
+  // 校验邮箱认证链接中的 token，成功后认证状态置为通过。
+  rpc VerifyEmailAuth(VerifyEmailAuthRequest) returns (VerifyEmailAuthReply) {
+    option (google.api.http) = {get: "/v1/campus-auth/email/verify"};
+  }
+
+  // 提交学号认证材料，进入人工审核队列。
+  rpc SubmitStudentCardAuth(SubmitStudentCardAuthRequest) returns (SubmitStudentCardAuthReply) {
+    option (google.api.http) = {
+      post: "/v1/campus-auth/student-card"
+      body: "*"
+    };
+  }
+
+  // 查询当前用户的认证状态与驳回原因。
+  rpc GetMyCampusAuth(GetMyCampusAuthRequest) returns (CampusAuth) {
+    option (google.api.http) = {get: "/v1/campus-auth/me"};
+  }
+}
+
+// CampusAuthStatus 认证状态。
+enum CampusAuthStatus {
+  CAMPUS_AUTH_STATUS_UNSPECIFIED = 0;
+  // 从未提交过认证。
+  CAMPUS_AUTH_STATUS_NONE = 1;
+  // 已提交，等待人工审核。
+  CAMPUS_AUTH_STATUS_PENDING = 2;
+  // 认证通过。
+  CAMPUS_AUTH_STATUS_PASSED = 3;
+  // 认证被驳回，可重新提交。
+  CAMPUS_AUTH_STATUS_REJECTED = 4;
+  // 认证已过期（如已毕业），需重新认证。
+  CAMPUS_AUTH_STATUS_EXPIRED = 5;
+}
+
+// CampusAuthMethod 认证方式。
+enum CampusAuthMethod {
+  CAMPUS_AUTH_METHOD_UNSPECIFIED = 0;
+  // 校园邮箱，自动审核。
+  CAMPUS_AUTH_METHOD_EDU_EMAIL = 1;
+  // 学号 + 学生证照片，人工审核。
+  CAMPUS_AUTH_METHOD_STUDENT_CARD = 2;
+}
+
+message ListSchoolsRequest {
+  // 学校名称关键词，留空返回热门学校。
+  string keyword = 1 [(buf.validate.field).string.max_len = 50];
+  common.v1.PageRequest page = 2;
+}
+
+message ListSchoolsReply {
+  repeated School schools = 1;
+  common.v1.PageReply page = 2;
+}
+
+message School {
+  int64 school_id = 1;
+  string name = 2;
+  string province = 3;
+  // 该校认可的校园邮箱域名后缀，如 ["stu.pku.edu.cn", "pku.edu.cn"]。
+  repeated string email_domains = 4;
+}
+
+message ListCampusesRequest {
+  int64 school_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message ListCampusesReply {
+  repeated Campus campuses = 1;
+}
+
+message Campus {
+  int64 campus_id = 1;
+  int64 school_id = 2;
+  string name = 3;
+  // 校区中心坐标，用于地图初始视野。
+  common.v1.GeoPoint location = 4;
+}
+
+message StartEmailAuthRequest {
+  int64 school_id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 campus_id = 2 [(buf.validate.field).int64.gt = 0];
+  // 校园邮箱。域名后缀必须命中该校白名单，否则返回 400。
+  string edu_email = 3 [(buf.validate.field).string.email = true];
+}
+
+message StartEmailAuthReply {
+  // 邮件已发往的地址（脱敏），供前端提示用户查收。
+  string email_masked = 1;
+  // 链接过期时间，Unix 秒。
+  int64 expire_at = 2;
+}
+
+message VerifyEmailAuthRequest {
+  // 邮件链接中携带的签名 token。
+  string token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message VerifyEmailAuthReply {
+  CampusAuth auth = 1;
+}
+
+message SubmitStudentCardAuthRequest {
+  int64 school_id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 campus_id = 2 [(buf.validate.field).int64.gt = 0];
+  // 学号。
+  string student_no = 3 [(buf.validate.field).string = {min_len: 4, max_len: 32}];
+  // 真实姓名。
+  string real_name = 4 [(buf.validate.field).string = {min_len: 2, max_len: 20}];
+  // 学生证照片的对象存储 key，1~2 张。
+  //
+  // 隐私说明：照片仅用于人工核验，认证结论产出后 30 天内自动删除，
+  // 长期只保留认证结果，不保留原图。
+  repeated string image_keys = 5 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 2
+  }];
+}
+
+message SubmitStudentCardAuthReply {
+  CampusAuth auth = 1;
+}
+
+message GetMyCampusAuthRequest {}
+
+// CampusAuth 一条认证记录。
+message CampusAuth {
+  int64 auth_id = 1;
+  int64 user_id = 2;
+  CampusAuthMethod method = 3;
+  CampusAuthStatus status = 4;
+  common.v1.CampusRef campus = 5;
+  // 脱敏学号，如 "2021****01"。仅本人可见。
+  string student_no_masked = 6;
+  // 驳回原因，status 为 REJECTED 时有值。
+  string reject_reason = 7;
+  // 认证通过时间，Unix 秒。
+  int64 verified_at = 8;
+  // 认证过期时间，Unix 秒。0 表示不过期。
+  int64 expire_at = 9;
+}

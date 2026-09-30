@@ -1,0 +1,25 @@
+# 集中式契约模块：全部服务的 proto 构成单一 buf module，
+# 以支撑「外部客户端无需拷贝 proto 即可生成代码」（见 doc.md §6）。
+version: v2
+modules:
+  - path: .
+    name: buf.build/fleamarket/api
+lint:
+  use:
+    - STANDARD
+  except:
+    # 目录结构为 <service>/v1/，包名为 <service>.v1，与 buf 默认要求的
+    # 全路径匹配规则不一致，此处放行。
+    - PACKAGE_DIRECTORY_MATCH
+    # 沿用 kratos 生态的 XxxReply 命名（官方模板与 protoc-gen-go-http 均如此），
+    # 而非 buf 偏好的 XxxResponse。统一优先于工具默认。
+    - RPC_RESPONSE_STANDARD_NAME
+    # 允许多个 RPC 复用同一响应类型。例如 GetMe/UpdateMe 同返 UserProfile、
+    # 三种登录方式同返 LoginReply —— 强制每个 RPC 各造一个壳 message 只增加噪音。
+    - RPC_REQUEST_RESPONSE_UNIQUE
+breaking:
+  use:
+    - FILE
+deps:
+  - buf.build/googleapis/googleapis
+  - buf.build/bufbuild/protovalidate

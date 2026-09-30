@@ -1,0 +1,55 @@
+# 代码生成模板（Go 侧）。
+# 产物直接落在 api/<service>/v1/ 下，与 proto 同目录，便于服务端 import。
+version: v2
+
+plugins:
+  # 基础 message 与序列化
+  - local: protoc-gen-go
+    out: .
+    opt:
+      - paths=source_relative
+
+  # gRPC 服务端骨架与客户端 stub（微服务间 RPC 通讯）
+  - local: protoc-gen-go-grpc
+    out: .
+    opt:
+      - paths=source_relative
+
+  # kratos：依据 google.api.http 注解生成 HTTP 路由与 handler
+  - local: protoc-gen-go-http
+    out: .
+    opt:
+      - paths=source_relative
+
+  # kratos：依据 errors.proto 的枚举生成强类型错误构造器与判定函数
+  - local: protoc-gen-go-errors
+    out: .
+    opt:
+      - paths=source_relative
+
+  # 文档效果：proto 注释 → OpenAPI 3，再由 Redoc 渲染成可浏览文档站
+  #
+  # strategy: all 是必需的。buf 默认按目录逐次调用插件，会导致每个目录各产出一个
+  # openapi.yaml 而互相覆盖（最终只剩下无 service 的 common/v1 的空文件）。
+  - local: protoc-gen-openapi
+    out: ../docs
+    strategy: all
+    opt:
+      - naming=json
+      # 必须声明默认错误响应。
+      #
+      # 设为 false 时 OpenAPI 只描述 200，由它生成的客户端类型里
+      # 根本没有 error 分支——调用方在类型层面无法处理失败，
+      # 而实际接口是会返回 kratos 错误体的（doc.md §12）。
+      # 文档不描述错误，等于把最需要类型保护的路径留给了 any。
+      - default_response=true
+      # 枚举必须生成为字符串。
+      #
+      # 默认（数字）与运行时行为不一致：kratos 的 HTTP 编解码用 protojson，
+      # 它输出枚举的名称字符串（如 "SMS_SCENE_LOGIN"），输入时两种都接受。
+      # 若文档声明为 number，由它生成的客户端类型在每个枚举字段上都是错的，
+      # 而这种错误在编译期表现为「类型对了但运行时对不上」——最难查的一类。
+      - enum_type=string
+      - title=校园跳蚤市场 API
+      - version=v1
+      - description=校园二手交易平台对外 HTTP API。全部接口经 api-gateway 暴露，需在 Authorization 头携带 Bearer access_token（登录与学校字典类接口除外）。

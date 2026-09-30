@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+package trade.v1;
+
+option go_package = "github.com/fleamarket/api/trade/v1;tradev1";
+
+import "google/api/annotations.proto";
+import "buf/validate/validate.proto";
+import "common/v1/common.proto";
+import "user/v1/user.proto";
+
+// ReviewService 双向评价。
+//
+// 只有完成的订单可以评价，且买卖双方各评一次（doc.md §9.4）。
+// 评价结果会转成信誉分变更，因此它是平台信任体系的数据来源。
+service ReviewService {
+  // 提交评价。
+  //
+  // 7 天互评期内可提交，提交后不可修改——可改的评价会变成
+  // 双方互相要求「改成好评」的筹码，反而损害真实性。
+  rpc CreateReview(CreateReviewRequest) returns (Review) {
+    option (google.api.http) = {
+      post: "/v1/orders/{order_id}/reviews"
+      body: "*"
+    };
+  }
+
+  // 查看某订单的评价（双方的）。
+  rpc ListOrderReviews(ListOrderReviewsRequest) returns (ListReviewsReply) {
+    option (google.api.http) = {get: "/v1/orders/{order_id}/reviews"};
+  }
+
+  // 查看某用户收到的评价，用于个人主页。
+  rpc ListUserReviews(ListUserReviewsRequest) returns (ListReviewsReply) {
+    option (google.api.http) = {get: "/v1/users/{user_id}/reviews"};
+  }
+
+  // 用户的评价统计。内部接口，供 user-service 聚合主页的好评率。
+  rpc GetUserReviewStats(GetUserReviewStatsRequest) returns (UserReviewStats) {}
+}
+
+// ReviewRole 评价者在交易中的角色。
+enum ReviewRole {
+  REVIEW_ROLE_UNSPECIFIED = 0;
+  // 买家评卖家。
+  REVIEW_ROLE_BUYER = 1;
+  // 卖家评买家。
+  REVIEW_ROLE_SELLER = 2;
+}
+
+// ReviewTag 评价标签，供快速选择。
+//
+// 提供标签而非只有自由文本：多数用户不愿写长评，
+// 标签让「商品描述准确」这类关键信息能被结构化统计。
+enum ReviewTag {
+  REVIEW_TAG_UNSPECIFIED = 0;
+  // 描述准确。
+  REVIEW_TAG_ACCURATE_DESCRIPTION = 1;
+  // 沟通顺畅。
+  REVIEW_TAG_GOOD_COMMUNICATION = 2;
+  // 准时守约。
+  REVIEW_TAG_PUNCTUAL = 3;
+  // 价格实惠。
+  REVIEW_TAG_GOOD_VALUE = 4;
+  // 描述有偏差。
+  REVIEW_TAG_INACCURATE_DESCRIPTION = 5;
+  // 迟到或改约。
+  REVIEW_TAG_LATE = 6;
+  // 沟通不畅。
+  REVIEW_TAG_POOR_COMMUNICATION = 7;
+}
+
+message CreateReviewRequest {
+  int64 order_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 评分 1~5。
+  //
+  // 4~5 计好评、3 计中评、1~2 计差评，映射到信誉分变更
+  // （规则在 user-service 内，见 doc.md §9.4）。
+  int32 score = 2 [(buf.validate.field).int32 = {gte: 1, lte: 5}];
+  repeated ReviewTag tags = 3 [(buf.validate.field).repeated.max_items = 5];
+  string content = 4 [(buf.validate.field).string.max_len = 500];
+  // 匿名评价。仍会计入信誉分，但不展示评价者昵称。
+  bool anonymous = 5;
+}
+
+message ListOrderReviewsRequest {
+  int64 order_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message ListUserReviewsRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 只看某一类评分。0 表示全部，1 好评，2 中评，3 差评。
+  int32 score_group = 2 [(buf.validate.field).int32 = {gte: 0, lte: 3}];
+  common.v1.CursorRequest page = 3;
+}
+
+message ListReviewsReply {
+  repeated Review reviews = 1;
+  common.v1.CursorReply page = 2;
+}
+
+message GetUserReviewStatsRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+// UserReviewStats 评价统计。
+message UserReviewStats {
+  int64 user_id = 1;
+  int32 total_count = 2;
+  int32 positive_count = 3;
+  int32 neutral_count = 4;
+  int32 negative_count = 5;
+  // 好评率百分比，0~100。评价数为 0 时返回 0。
+  int32 positive_rate = 6;
+  // 平均分，放大 10 倍的整数（如 47 表示 4.7）。
+  //
+  // 用整数传输避免浮点在不同语言间的表示差异，
+  // 前端除以 10 显示即可。
+  int32 average_score_x10 = 7;
+}
+
+// Review 一条评价。
+message Review {
+  int64 review_id = 1;
+  int64 order_id = 2;
+  int64 product_id = 3;
+  // 评价者。匿名评价时为 0。
+  int64 from_user_id = 4;
+  int64 to_user_id = 5;
+  ReviewRole role = 6;
+  int32 score = 7;
+  repeated ReviewTag tags = 8;
+  string content = 9;
+  bool anonymous = 10;
+  int64 created_at = 11;
+  // 评价者摘要。匿名时为空，由网关聚合 user-service 填充。
+  user.v1.UserBrief from_user = 12;
+}

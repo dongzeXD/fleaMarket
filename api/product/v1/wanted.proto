@@ -1,0 +1,113 @@
+syntax = "proto3";
+
+package product.v1;
+
+option go_package = "github.com/fleamarket/api/product/v1;productv1";
+
+import "google/api/annotations.proto";
+import "buf/validate/validate.proto";
+import "common/v1/common.proto";
+import "product/v1/category.proto";
+
+// WantedService 求购帖，即反向发布的「我想要」。
+//
+// 为什么需要它：校园二手的供给是零散且偶然的——某本教材此刻没人在卖，
+// 但下周可能就有人清书架。求购帖让需求可被看见，把「等运气」变成「等匹配」。
+service WantedService {
+  // 发布求购帖。与发布商品一样要求已通过校园认证。
+  rpc CreateWanted(CreateWantedRequest) returns (WantedPost) {
+    option (google.api.http) = {
+      post: "/v1/wanted"
+      body: "*"
+    };
+  }
+
+  // 查看求购帖详情。
+  rpc GetWanted(GetWantedRequest) returns (WantedPost) {
+    option (google.api.http) = {get: "/v1/wanted/{wanted_id}"};
+  }
+
+  // 关闭求购帖（已找到或不再需要）。仅发帖人可调用。
+  rpc CloseWanted(CloseWantedRequest) returns (WantedPost) {
+    option (google.api.http) = {
+      post: "/v1/wanted/{wanted_id}/close"
+      body: "*"
+    };
+  }
+
+  // 浏览求购帖列表，按校区与分类筛选。
+  rpc ListWanted(ListWantedRequest) returns (ListWantedReply) {
+    option (google.api.http) = {get: "/v1/wanted"};
+  }
+
+  // 我发布的求购帖。
+  rpc ListMyWanted(ListMyWantedRequest) returns (ListWantedReply) {
+    option (google.api.http) = {get: "/v1/wanted/mine"};
+  }
+}
+
+// WantedStatus 求购帖状态。
+enum WantedStatus {
+  WANTED_STATUS_UNSPECIFIED = 0;
+  // 征集中。
+  WANTED_STATUS_OPEN = 1;
+  // 已关闭（已找到或主动关闭）。
+  WANTED_STATUS_CLOSED = 2;
+  // 已过期。求购是有时效的需求，过期后自动收起以免长期占据列表。
+  WANTED_STATUS_EXPIRED = 3;
+}
+
+message CreateWantedRequest {
+  // 求购标题，2~60 字符。
+  string title = 1 [(buf.validate.field).string = {min_len: 2, max_len: 60}];
+  // 详细说明，最多 1000 字符。
+  string description = 2 [(buf.validate.field).string.max_len = 1000];
+  // 心理价位上限，单位分。0 表示价格可议。
+  int64 budget_max_cents = 3 [(buf.validate.field).int64 = {gte: 0, lte: 99999999}];
+  int64 category_id = 4 [(buf.validate.field).int64.gt = 0];
+  int64 campus_id = 5 [(buf.validate.field).int64.gt = 0];
+  // 有效天数，1~30。到期后自动置为 EXPIRED。
+  int32 valid_days = 6 [(buf.validate.field).int32 = {gte: 1, lte: 30}];
+}
+
+message GetWantedRequest {
+  int64 wanted_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message CloseWantedRequest {
+  int64 wanted_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message ListWantedRequest {
+  // 按分类筛选，0 表示全部。
+  int64 category_id = 1;
+  // 按校区筛选，0 表示全部。
+  int64 campus_id = 2;
+  string keyword = 3 [(buf.validate.field).string.max_len = 50];
+  common.v1.CursorRequest page = 4;
+}
+
+message ListMyWantedRequest {
+  common.v1.CursorRequest page = 1;
+}
+
+message ListWantedReply {
+  repeated WantedPost posts = 1;
+  common.v1.CursorReply page = 2;
+}
+
+// WantedPost 一条求购帖。
+message WantedPost {
+  int64 wanted_id = 1;
+  int64 user_id = 2;
+  string title = 3;
+  string description = 4;
+  int64 budget_max_cents = 5;
+  Category category = 6;
+  common.v1.CampusRef campus = 7;
+  WantedStatus status = 8;
+  int64 view_count = 9;
+  int64 created_at = 10;
+  // 过期时间，Unix 秒。
+  int64 expire_at = 11;
+}

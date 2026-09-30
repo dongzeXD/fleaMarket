@@ -1,0 +1,23 @@
+{
+  "name": "@fleamarket/api-sdk",
+  "version": "0.0.0",
+  "private": true,
+  "description": "由 api/**/*.proto 生成的 OpenAPI 类型与 fetch 客户端。不手写，改契约请改 proto",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/generated/schema.ts"
+  },
+  "scripts": {
+    "generate": "openapi-typescript ../../../docs/openapi.yaml -o src/generated/schema.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "openapi-fetch": "0.13.4"
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.5.2",
+    "typescript": "5.7.3"
+  }
+}

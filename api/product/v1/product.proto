@@ -1,0 +1,444 @@
+syntax = "proto3";
+
+// product.v1 商品域：闲置商品的发布、检索与生命周期管理。
+package product.v1;
+
+option go_package = "github.com/fleamarket/api/product/v1;productv1";
+
+import "google/api/annotations.proto";
+import "buf/validate/validate.proto";
+import "common/v1/common.proto";
+import "product/v1/category.proto";
+
+// ProductService 商品的发布与生命周期管理。
+//
+// 状态机（doc.md §9.2）：
+//
+//   PENDING_REVIEW ──pass──> ON_SALE ──reserve──> RESERVED ──complete──> SOLD
+//        │                      │                    │
+//        └──reject──> REJECTED  └──offline──> OFFLINE └──cancel──> ON_SALE
+//                                    │
+//                                    └──republish──> PENDING_REVIEW
+//
+// 发布前置条件：调用方必须已通过校园认证，否则返回 403 CAMPUS_AUTH_REQUIRED。
+service ProductService {
+  // 申请图片上传凭证。
+  //
+  // 图片由客户端直传对象存储，不经过业务服务——一张 5MB 的图片若经服务端
+  // 转发，在高并发下会迅速吃满内存与网卡。
+  //
+  // 流程：调用本接口拿到预签名 PUT 地址 → 客户端上传 → 用返回的 object_key
+  // 调用 CreateProduct。服务端在发布时校验 key 归属与对象是否真实存在。
+  rpc CreateImageUploadURL(CreateImageUploadURLRequest) returns (CreateImageUploadURLReply) {
+    option (google.api.http) = {
+      post: "/v1/products/image-upload-url"
+      body: "*"
+    };
+  }
+
+  // 发布闲置商品。
+  //
+  // 发布后进入 PENDING_REVIEW，经内容审核通过才对外可见。
+  rpc CreateProduct(CreateProductRequest) returns (Product) {
+    option (google.api.http) = {
+      post: "/v1/products"
+      body: "*"
+    };
+  }
+
+  // 查看商品详情。未登录可访问，以便分享链接被未注册用户打开。
+  rpc GetProduct(GetProductRequest) returns (Product) {
+    option (google.api.http) = {get: "/v1/products/{product_id}"};
+  }
+
+  // 修改商品。仅卖家本人可调用。
+  //
+  // 改价会写入价格历史并触发降价提醒（doc.md §9.2）。
+  rpc UpdateProduct(UpdateProductRequest) returns (Product) {
+    option (google.api.http) = {
+      patch: "/v1/products/{product_id}"
+      body: "*"
+    };
+  }
+
+  // 变更商品状态（下架、重新上架等）。仅卖家本人可调用。
+  rpc ChangeProductStatus(ChangeProductStatusRequest) returns (Product) {
+    option (google.api.http) = {
+      post: "/v1/products/{product_id}/status"
+      body: "*"
+    };
+  }
+
+  // 删除商品（软删除）。仅卖家本人可调用，已售出的商品不可删除——
+  // 它是交易记录与评价的引用对象。
+  rpc DeleteProduct(DeleteProductRequest) returns (DeleteProductReply) {
+    option (google.api.http) = {delete: "/v1/products/{product_id}"};
+  }
+
+  // 我发布的商品。
+  rpc ListMyProducts(ListMyProductsRequest) returns (ListProductsReply) {
+    option (google.api.http) = {get: "/v1/products/mine"};
+  }
+
+  // 某用户公开在售的商品，用于他人主页。
+  rpc ListUserProducts(ListUserProductsRequest) returns (ListProductsReply) {
+    option (google.api.http) = {get: "/v1/users/{seller_id}/products"};
+  }
+
+  // 批量获取商品摘要。内部接口，供 trade/im/search 回填商品卡片。
+  rpc BatchGetProductBrief(BatchGetProductBriefRequest) returns (BatchGetProductBriefReply) {}
+
+  // 为下单锁定商品。内部接口，仅 trade-service 调用。
+  //
+  // 实现上是 `UPDATE ... WHERE id=? AND status=ON_SALE`，
+  // 以影响行数判定抢占成功，天然并发安全（doc.md §9.4）。
+  rpc LockForOrder(LockForOrderRequest) returns (LockForOrderReply) {}
+
+  // 释放锁定，把商品恢复为在售。内部接口，仅 trade-service 调用。
+  rpc ReleaseOrderLock(ReleaseOrderLockRequest) returns (ReleaseOrderLockReply) {}
+
+  // 标记为已售出。内部接口，仅 trade-service 在交易完成时调用。
+  rpc MarkSold(MarkSoldRequest) returns (MarkSoldReply) {}
+
+  // 回写内容审核结论。内部接口，仅 review-service 调用。
+  rpc ApplyModerationResult(ApplyModerationResultRequest) returns (ApplyModerationResultReply) {}
+
+  // 统计某用户的商品数量。内部接口，供 user-service 聚合主页。
+  rpc CountUserProducts(CountUserProductsRequest) returns (CountUserProductsReply) {}
+
+  // 扫描商品用于全量重建索引。内部接口，仅 search-service 调用。
+  //
+  // 按主键游标分页而非 OFFSET：全量扫描动辄数十万行，
+  // 深分页的 OFFSET 会让数据库逐行跳过前面所有记录，越翻越慢。
+  rpc ScanForIndex(ScanForIndexRequest) returns (ScanForIndexReply) {}
+
+  // 降级检索。内部接口，仅 search-service 在搜索引擎不可用时调用。
+  //
+  // 为什么放在 product-service 而不是让 search-service 直连数据库：
+  // 商品表归 product-service 所有，跨服务直读他人的表会让 schema
+  // 变更的影响面失控（doc.md §4.1 的边界约束）。
+  // 代价是多一次 RPC，但这条路径本身就是故障时的降级路径，可以接受。
+  rpc SearchFallback(SearchFallbackRequest) returns (SearchFallbackReply) {}
+}
+
+// ProductStatus 商品状态。
+enum ProductStatus {
+  PRODUCT_STATUS_UNSPECIFIED = 0;
+  // 待审核。刚发布或重新上架，对外不可见。
+  PRODUCT_STATUS_PENDING_REVIEW = 1;
+  // 在售。
+  PRODUCT_STATUS_ON_SALE = 2;
+  // 已预订。有买家下单待完成，其他人不能再预订。
+  PRODUCT_STATUS_RESERVED = 3;
+  // 已售出，终态。
+  PRODUCT_STATUS_SOLD = 4;
+  // 已下架，卖家主动收起。
+  PRODUCT_STATUS_OFFLINE = 5;
+  // 审核驳回，附驳回原因。
+  PRODUCT_STATUS_REJECTED = 6;
+}
+
+// ProductEvent 触发状态流转的事件。
+enum ProductEvent {
+  PRODUCT_EVENT_UNSPECIFIED = 0;
+  // 下架（ON_SALE → OFFLINE）。
+  PRODUCT_EVENT_OFFLINE = 1;
+  // 重新上架（OFFLINE → PENDING_REVIEW）。
+  PRODUCT_EVENT_REPUBLISH = 2;
+}
+
+// Condition 成色等级。
+enum Condition {
+  CONDITION_UNSPECIFIED = 0;
+  // 全新未拆封。
+  CONDITION_NEW = 1;
+  // 几乎全新，无明显痕迹。
+  CONDITION_LIKE_NEW = 2;
+  // 轻微使用痕迹。
+  CONDITION_LIGHTLY_USED = 3;
+  // 明显使用痕迹。
+  CONDITION_WELL_USED = 4;
+}
+
+// UploadPurpose 上传用途，决定对象的存储目录与校验规则。
+enum UploadPurpose {
+  UPLOAD_PURPOSE_UNSPECIFIED = 0;
+  // 商品图片。
+  UPLOAD_PURPOSE_PRODUCT_IMAGE = 1;
+}
+
+message CreateImageUploadURLRequest {
+  // 文件扩展名，不含点号，如 "jpg"。仅允许图片格式。
+  string extension = 1 [(buf.validate.field).string = {
+    in: ["jpg", "jpeg", "png", "webp"]
+  }];
+  // 文件字节数，用于服务端提前拒绝过大的文件。
+  int64 size_bytes = 2 [(buf.validate.field).int64 = {gt: 0, lte: 5242880}];
+  UploadPurpose purpose = 3 [(buf.validate.field).enum.defined_only = true];
+}
+
+message CreateImageUploadURLReply {
+  // 预签名上传地址，客户端以 PUT 上传。
+  string upload_url = 1;
+  // 对象 key，上传成功后回传给业务接口。
+  string object_key = 2;
+  // 上传时必须携带的请求头。Content-Type 参与签名，改动会导致上传被拒。
+  map<string, string> headers = 3;
+  // 凭证过期时间，Unix 秒。
+  int64 expire_at = 4;
+  // 允许的最大字节数。
+  int64 max_size_bytes = 5;
+}
+
+message CreateProductRequest {
+  // 商品标题，2~60 字符。禁止包含联系方式，违规会被审核驳回。
+  string title = 1 [(buf.validate.field).string = {min_len: 2, max_len: 60}];
+  // 详细描述，最多 2000 字符。
+  string description = 2 [(buf.validate.field).string.max_len = 2000];
+  // 价格，单位分。0 表示免费赠送。
+  int64 price_cents = 3 [(buf.validate.field).int64 = {gte: 0, lte: 99999999}];
+  // 原价，单位分。可选，用于展示「原价 ¥x」。
+  int64 original_price_cents = 4 [(buf.validate.field).int64.gte = 0];
+  Condition condition = 5 [(buf.validate.field).enum = {defined_only: true, not_in: [0]}];
+  // 二级分类 ID。
+  int64 category_id = 6 [(buf.validate.field).int64.gt = 0];
+  // 交易校区。默认取卖家认证的校区。
+  int64 campus_id = 7 [(buf.validate.field).int64.gt = 0];
+  // 建议面交地点的 POI ID，可选。
+  int64 poi_id = 8;
+  // 图片 object_key 列表，1~9 个。第一张为封面。
+  repeated string image_keys = 9 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 9
+  }];
+}
+
+message GetProductRequest {
+  int64 product_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message UpdateProductRequest {
+  int64 product_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 以下字段为可选更新。未提供的字段保持原值。
+  //
+  // 用 optional 而非「空值即不更新」：价格为 0 是合法的（免费赠送），
+  // 若以零值表示「不更新」，卖家就无法把商品改成免费。
+  optional string title = 2 [(buf.validate.field).string = {min_len: 2, max_len: 60}];
+  optional string description = 3 [(buf.validate.field).string.max_len = 2000];
+  optional int64 price_cents = 4 [(buf.validate.field).int64 = {gte: 0, lte: 99999999}];
+  optional Condition condition = 5 [(buf.validate.field).enum.defined_only = true];
+  optional int64 category_id = 6;
+  optional int64 poi_id = 7;
+  // 提供时整体替换图片列表。
+  repeated string image_keys = 8 [(buf.validate.field).repeated.max_items = 9];
+}
+
+message ChangeProductStatusRequest {
+  int64 product_id = 1 [(buf.validate.field).int64.gt = 0];
+  ProductEvent event = 2 [(buf.validate.field).enum = {defined_only: true, not_in: [0]}];
+}
+
+message DeleteProductRequest {
+  int64 product_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message DeleteProductReply {}
+
+message ListMyProductsRequest {
+  // 按状态筛选。留空返回全部状态。
+  repeated ProductStatus statuses = 1;
+  common.v1.CursorRequest page = 2;
+}
+
+message ListUserProductsRequest {
+  int64 seller_id = 1 [(buf.validate.field).int64.gt = 0];
+  common.v1.CursorRequest page = 2;
+}
+
+message ListProductsReply {
+  repeated ProductBrief products = 1;
+  common.v1.CursorReply page = 2;
+}
+
+message BatchGetProductBriefRequest {
+  repeated int64 product_ids = 1 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 100
+  }];
+}
+
+message BatchGetProductBriefReply {
+  // key 为 product_id。查不到的 ID 不出现在结果中。
+  map<int64, ProductBrief> products = 1;
+}
+
+message LockForOrderRequest {
+  int64 product_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 订单 ID，写入商品记录以便追溯是哪一单锁定的。
+  int64 order_id = 2 [(buf.validate.field).int64.gt = 0];
+  // 买家 ID，用于校验不能购买自己的商品。
+  int64 buyer_id = 3 [(buf.validate.field).int64.gt = 0];
+}
+
+message LockForOrderReply {
+  // 是否抢占成功。false 表示商品已被他人预订或状态不允许。
+  bool locked = 1;
+  // 锁定失败时商品的当前状态，供调用方给出准确提示。
+  ProductStatus current_status = 2;
+  // 成交价快照，单位分。以锁定时刻的价格为准，防止卖家事后改价。
+  int64 price_cents = 3;
+  int64 seller_id = 4;
+}
+
+message ReleaseOrderLockRequest {
+  int64 product_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 订单 ID。只有持有锁的订单才能释放，防止误释放他人的锁。
+  int64 order_id = 2 [(buf.validate.field).int64.gt = 0];
+}
+
+message ReleaseOrderLockReply {
+  bool released = 1;
+}
+
+message MarkSoldRequest {
+  int64 product_id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 order_id = 2 [(buf.validate.field).int64.gt = 0];
+}
+
+message MarkSoldReply {
+  bool marked = 1;
+}
+
+message ApplyModerationResultRequest {
+  int64 product_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 是否通过。
+  bool passed = 2;
+  // 驳回原因，passed 为 false 时必填。
+  string reject_reason = 3 [(buf.validate.field).string.max_len = 255];
+  // 命中的违规词，用于在卖家侧展示具体问题。
+  repeated string hit_words = 4;
+}
+
+message ApplyModerationResultReply {}
+
+message CountUserProductsRequest {
+  int64 seller_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message CountUserProductsReply {
+  // 在售数量（含已预订）。
+  int32 on_sale_count = 1;
+  // 已售出数量。
+  int32 sold_count = 2;
+}
+
+message ScanForIndexRequest {
+  // 上一批返回的 next_cursor，首次传 0。
+  int64 after_id = 1 [(buf.validate.field).int64.gte = 0];
+  int32 limit = 2 [(buf.validate.field).int32 = {gte: 1, lte: 1000}];
+}
+
+message ScanForIndexReply {
+  repeated IndexDocument documents = 1;
+  // 下一批的 after_id。为 0 表示已扫描完毕。
+  int64 next_after_id = 2;
+}
+
+// IndexDocument 供检索索引使用的商品文档。
+//
+// 与 ProductBrief 分离：索引需要 description 做全文匹配、需要热度分做排序，
+// 但不需要 favorited 这类与观察者相关的字段。
+message IndexDocument {
+  int64 product_id = 1;
+  int64 seller_id = 2;
+  string title = 3;
+  string description = 4;
+  int64 price_cents = 5;
+  Condition condition = 6;
+  ProductStatus status = 7;
+  int64 category_id = 8;
+  // 一级分类 ID。冗余进索引，使按一级分类筛选无需展开其下全部二级分类。
+  int64 parent_category_id = 9;
+  int64 school_id = 10;
+  int64 campus_id = 11;
+  string cover_key = 12;
+  double heat_score = 13;
+  int32 favorite_count = 14;
+  int64 created_at = 15;
+  // 是否已被软删除。删除的文档需要从索引中移除。
+  bool deleted = 16;
+}
+
+message SearchFallbackRequest {
+  string keyword = 1 [(buf.validate.field).string.max_len = 50];
+  int64 min_price_cents = 2;
+  int64 max_price_cents = 3;
+  repeated Condition conditions = 4;
+  repeated int64 category_ids = 5;
+  repeated int64 campus_ids = 6;
+  bool only_available = 7;
+  // 排序：latest / price_asc / price_desc。
+  //
+  // 刻意不支持按热度与距离排序：降级路径直查数据库，
+  // 这两种排序需要的复合索引会拖慢正常写入，不值得为故障路径付这个成本。
+  string sort = 8;
+  string cursor = 9;
+  int32 limit = 10 [(buf.validate.field).int32 = {gte: 1, lte: 50}];
+}
+
+message SearchFallbackReply {
+  repeated ProductBrief products = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+}
+
+// Product 商品完整信息。
+message Product {
+  int64 product_id = 1;
+  int64 seller_id = 2;
+  string title = 3;
+  string description = 4;
+  int64 price_cents = 5;
+  int64 original_price_cents = 6;
+  Condition condition = 7;
+  ProductStatus status = 8;
+  // 驳回原因，status 为 REJECTED 时有值。
+  string reject_reason = 9;
+
+  Category category = 10;
+  common.v1.CampusRef campus = 11;
+  // 建议面交地点，未设置时为空。
+  POI poi = 12;
+  // 图片列表，第一张为封面。
+  repeated common.v1.ImageRef images = 13;
+
+  int64 view_count = 14;
+  int32 favorite_count = 15;
+  // 当前登录用户是否已收藏。未登录时为 false。
+  bool favorited = 16;
+  // 热度分，用于信息流排序。
+  double heat_score = 17;
+
+  int64 created_at = 18;
+  int64 updated_at = 19;
+}
+
+// ProductBrief 商品摘要，用于列表与卡片展示。
+//
+// 与 Product 分离是为了控制列表接口的响应体积：
+// description 可达 2000 字符，一页 20 条就是 40KB 的无用传输。
+message ProductBrief {
+  int64 product_id = 1;
+  int64 seller_id = 2;
+  string title = 3;
+  int64 price_cents = 4;
+  int64 original_price_cents = 5;
+  Condition condition = 6;
+  ProductStatus status = 7;
+  // 封面图。
+  common.v1.ImageRef cover = 8;
+  common.v1.CampusRef campus = 9;
+  int32 favorite_count = 10;
+  bool favorited = 11;
+  int64 created_at = 12;
+}

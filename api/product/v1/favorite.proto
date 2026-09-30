@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package product.v1;
+
+option go_package = "github.com/fleamarket/api/product/v1;productv1";
+
+import "google/api/annotations.proto";
+import "buf/validate/validate.proto";
+import "common/v1/common.proto";
+import "product/v1/product.proto";
+
+// FavoriteService 收藏。
+//
+// 收藏除了「稍后再看」，还承担降价与上新提醒的订阅关系：
+// 收藏后卖家改价会触发通知（doc.md §9.7）。
+service FavoriteService {
+  // 收藏商品。重复收藏视为成功，不报错。
+  rpc AddFavorite(AddFavoriteRequest) returns (AddFavoriteReply) {
+    option (google.api.http) = {
+      post: "/v1/products/{product_id}/favorite"
+      body: "*"
+    };
+  }
+
+  // 取消收藏。未收藏时调用也返回成功。
+  rpc RemoveFavorite(RemoveFavoriteRequest) returns (RemoveFavoriteReply) {
+    option (google.api.http) = {delete: "/v1/products/{product_id}/favorite"};
+  }
+
+  // 我的收藏列表。
+  rpc ListFavorites(ListFavoritesRequest) returns (ListFavoritesReply) {
+    option (google.api.http) = {get: "/v1/favorites"};
+  }
+
+  // 查询收藏了某商品的用户 ID。内部接口，供 notify-service 扇出降价提醒。
+  rpc ListFavoriteUserIDs(ListFavoriteUserIDsRequest) returns (ListFavoriteUserIDsReply) {}
+}
+
+message AddFavoriteRequest {
+  int64 product_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message AddFavoriteReply {
+  // 收藏后的总收藏数，供前端直接更新计数而无需重新拉取。
+  int32 favorite_count = 1;
+}
+
+message RemoveFavoriteRequest {
+  int64 product_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message RemoveFavoriteReply {
+  int32 favorite_count = 1;
+}
+
+message ListFavoritesRequest {
+  common.v1.CursorRequest page = 1;
+}
+
+message ListFavoritesReply {
+  repeated ProductBrief products = 1;
+  common.v1.CursorReply page = 2;
+}
+
+message ListFavoriteUserIDsRequest {
+  int64 product_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 分页游标，用于大量收藏时分批扇出，避免一次拉取全部造成长事务。
+  string cursor = 2;
+  int32 limit = 3 [(buf.validate.field).int32 = {gte: 1, lte: 500}];
+}
+
+message ListFavoriteUserIDsReply {
+  repeated int64 user_ids = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+}

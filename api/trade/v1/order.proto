@@ -1,0 +1,260 @@
+syntax = "proto3";
+
+// trade.v1 交易域：预订、面交约定、完成确认。
+package trade.v1;
+
+option go_package = "github.com/fleamarket/api/trade/v1;tradev1";
+
+import "google/api/annotations.proto";
+import "buf/validate/validate.proto";
+import "common/v1/common.proto";
+import "product/v1/product.proto";
+
+// OrderService 预订与交易流程。
+//
+// 本平台以线下当面交易为主，不引入资金托管（doc.md §1.3）。
+// 因此「订单」的实质是一个预订凭证 + 面交约定，而非支付单据：
+// 它解决的是「避免多人重复问同一件商品」和「双方对时间地点有共识」。
+//
+// 状态机（doc.md §9.4）：
+//
+//   PENDING_SELLER ──accept──> ACCEPTED ──buyer_done/seller_done──> AWAITING_PEER
+//        │                        │                                      │
+//        ├─reject──> REJECTED     ├─cancel──> CANCELLED                  └─peer_done──> COMPLETED
+//        └─timeout──> EXPIRED     └─timeout──> EXPIRED
+service OrderService {
+  // 发起预订。
+  //
+  // 商品会被原子地锁定为「已预订」，其他买家无法再预订
+  // （由 product-service 的 CAS 更新保证）。
+  rpc CreateOrder(CreateOrderRequest) returns (Order) {
+    option (google.api.http) = {
+      post: "/v1/orders"
+      body: "*"
+    };
+  }
+
+  // 查看订单详情。仅买卖双方可见。
+  rpc GetOrder(GetOrderRequest) returns (Order) {
+    option (google.api.http) = {get: "/v1/orders/{order_id}"};
+  }
+
+  // 卖家接受预订。
+  rpc AcceptOrder(AcceptOrderRequest) returns (Order) {
+    option (google.api.http) = {
+      post: "/v1/orders/{order_id}/accept"
+      body: "*"
+    };
+  }
+
+  // 卖家拒绝预订。商品恢复在售。
+  rpc RejectOrder(RejectOrderRequest) returns (Order) {
+    option (google.api.http) = {
+      post: "/v1/orders/{order_id}/reject"
+      body: "*"
+    };
+  }
+
+  // 取消订单。买卖双方都可发起。
+  //
+  // 买家在卖家已接受后取消会扣信誉分——占用了商品又不履约，
+  // 对卖家和其他潜在买家都造成了损失（doc.md §9.4）。
+  rpc CancelOrder(CancelOrderRequest) returns (Order) {
+    option (google.api.http) = {
+      post: "/v1/orders/{order_id}/cancel"
+      body: "*"
+    };
+  }
+
+  // 约定或修改面交时间地点。双方均可提议，对方可见。
+  rpc UpdateMeetup(UpdateMeetupRequest) returns (Order) {
+    option (google.api.http) = {
+      patch: "/v1/orders/{order_id}/meetup"
+      body: "*"
+    };
+  }
+
+  // 确认交易完成。
+  //
+  // 需双方都确认：单方确认后进入等待对方状态，
+  // 72 小时内对方未确认则自动完成（doc.md §9.4）。
+  // 这样设计是因为线下交易平台无法验证货物是否真的交付，
+  // 只能依赖双方确认，同时用自动完成兜住「一方忘记点」的情况。
+  rpc ConfirmDone(ConfirmDoneRequest) returns (Order) {
+    option (google.api.http) = {
+      post: "/v1/orders/{order_id}/done"
+      body: "*"
+    };
+  }
+
+  // 我的交易记录。可按角色与状态筛选。
+  rpc ListMyOrders(ListMyOrdersRequest) returns (ListOrdersReply) {
+    option (google.api.http) = {get: "/v1/orders"};
+  }
+
+  // 统计某用户的成交数。内部接口，供 user-service 聚合主页。
+  rpc CountUserTrades(CountUserTradesRequest) returns (CountUserTradesReply) {}
+}
+
+// OrderStatus 订单状态。
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  // 待卖家确认。
+  ORDER_STATUS_PENDING_SELLER = 1;
+  // 卖家已接受，待面交。
+  ORDER_STATUS_ACCEPTED = 2;
+  // 一方已确认完成，等待对方确认。
+  ORDER_STATUS_AWAITING_PEER = 3;
+  // 已完成，进入互评期。
+  ORDER_STATUS_COMPLETED = 4;
+  // 卖家拒绝。
+  ORDER_STATUS_REJECTED = 5;
+  // 已取消。
+  ORDER_STATUS_CANCELLED = 6;
+  // 超时自动关闭。
+  ORDER_STATUS_EXPIRED = 7;
+}
+
+// PayChannel 支付方式。
+//
+// 当前只有线下当面交易一种取值。保留这个字段而非完全不做，
+// 是为了让日后若引入线上支付时不必改表结构；
+// 但服务端会拒绝任何非 OFFLINE 的取值（doc.md §1.3）。
+enum PayChannel {
+  PAY_CHANNEL_UNSPECIFIED = 0;
+  // 线下当面交易。
+  PAY_CHANNEL_OFFLINE = 1;
+}
+
+// CancelReason 取消原因，用于风控统计与信誉分判定。
+enum CancelReason {
+  CANCEL_REASON_UNSPECIFIED = 0;
+  // 买家不想要了。
+  CANCEL_REASON_BUYER_CHANGED_MIND = 1;
+  // 约不到合适的时间。
+  CANCEL_REASON_SCHEDULE_CONFLICT = 2;
+  // 实物与描述不符。
+  CANCEL_REASON_ITEM_MISMATCH = 3;
+  // 对方失联。
+  CANCEL_REASON_PEER_UNREACHABLE = 4;
+  CANCEL_REASON_OTHER = 99;
+}
+
+message CreateOrderRequest {
+  int64 product_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 建议面交地点，可选。留空表示待协商。
+  int64 meet_poi_id = 2;
+  // 建议面交时间，Unix 秒。可选。
+  int64 meet_time = 3;
+  // 给卖家的留言，最多 200 字符。
+  string message = 4 [(buf.validate.field).string.max_len = 200];
+}
+
+message GetOrderRequest {
+  int64 order_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message AcceptOrderRequest {
+  int64 order_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 卖家确认或修改的面交地点与时间。
+  int64 meet_poi_id = 2;
+  int64 meet_time = 3;
+}
+
+message RejectOrderRequest {
+  int64 order_id = 1 [(buf.validate.field).int64.gt = 0];
+  string reason = 2 [(buf.validate.field).string.max_len = 200];
+}
+
+message CancelOrderRequest {
+  int64 order_id = 1 [(buf.validate.field).int64.gt = 0];
+  CancelReason reason = 2 [(buf.validate.field).enum.defined_only = true];
+  string remark = 3 [(buf.validate.field).string.max_len = 200];
+}
+
+message UpdateMeetupRequest {
+  int64 order_id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 meet_poi_id = 2 [(buf.validate.field).int64.gt = 0];
+  int64 meet_time = 3 [(buf.validate.field).int64.gt = 0];
+}
+
+message ConfirmDoneRequest {
+  int64 order_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+// OrderRole 查询视角。
+enum OrderRole {
+  ORDER_ROLE_UNSPECIFIED = 0;
+  // 我是买家。
+  ORDER_ROLE_BUYER = 1;
+  // 我是卖家。
+  ORDER_ROLE_SELLER = 2;
+}
+
+message ListMyOrdersRequest {
+  OrderRole role = 1 [(buf.validate.field).enum.defined_only = true];
+  // 按状态筛选，留空表示全部。
+  repeated OrderStatus statuses = 2;
+  common.v1.CursorRequest page = 3;
+}
+
+message ListOrdersReply {
+  repeated Order orders = 1;
+  common.v1.CursorReply page = 2;
+}
+
+message CountUserTradesRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message CountUserTradesReply {
+  // 作为买家完成的交易数。
+  int32 bought_count = 1;
+  // 作为卖家完成的交易数。
+  int32 sold_count = 2;
+}
+
+// Order 订单（预订凭证）。
+message Order {
+  int64 order_id = 1;
+  int64 product_id = 2;
+  int64 buyer_id = 3;
+  int64 seller_id = 4;
+
+  // PriceCents 成交价快照，单位分。
+  //
+  // 在锁定商品的那一刻固定下来，之后卖家改价不影响本单——
+  // 否则买家会在面交时发现价格变了。
+  int64 price_cents = 5;
+  PayChannel pay_channel = 6;
+
+  OrderStatus status = 7;
+
+  // 面交约定。
+  int64 meet_poi_id = 8;
+  int64 meet_time = 9;
+  // 买家下单时的留言。
+  string buyer_message = 10;
+
+  // 已确认完成的一方。双方都确认后转为 COMPLETED。
+  bool buyer_confirmed = 11;
+  bool seller_confirmed = 12;
+
+  // 取消/拒绝的原因。
+  CancelReason cancel_reason = 13;
+  string cancel_remark = 14;
+  // 发起取消的一方。
+  int64 cancelled_by = 15;
+
+  int64 created_at = 16;
+  int64 accepted_at = 17;
+  int64 completed_at = 18;
+  // 当前状态的超时时间，Unix 秒。0 表示不超时。
+  int64 expire_at = 19;
+
+  // 商品摘要。由网关聚合 product-service 填充，本服务不跨服务同步调用。
+  product.v1.ProductBrief product = 20;
+  // 双方是否已评价，用于前端决定是否展示评价入口。
+  bool buyer_reviewed = 21;
+  bool seller_reviewed = 22;
+}

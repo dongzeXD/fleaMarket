@@ -1,0 +1,150 @@
+syntax = "proto3";
+
+// search.v1 检索域：信息流、关键词搜索、多维筛选。
+package search.v1;
+
+option go_package = "github.com/fleamarket/api/search/v1;searchv1";
+
+import "google/api/annotations.proto";
+import "buf/validate/validate.proto";
+import "common/v1/common.proto";
+import "product/v1/product.proto";
+
+// SearchService 商品检索。
+//
+// 索引由本服务消费 product.* 事件异步维护（doc.md §9.3），
+// 因此存在秒级延迟——刚发布的商品可能短时间内搜不到。
+// 这是可接受的：商品详情页走 product-service 直读，分享链接立即可用。
+service SearchService {
+  // 首页信息流。
+  //
+  // 「同校优先」由服务端按配额交错实现，不依赖搜索引擎的相关度评分：
+  // 三路查询（同校区 / 同校异校区 / 全局）按固定比例填充，
+  // 结果是确定性且可解释的，不会因评分波动而失效。
+  rpc Feed(FeedRequest) returns (SearchReply) {
+    option (google.api.http) = {get: "/v1/feed"};
+  }
+
+  // 关键词搜索 + 多维筛选。
+  rpc SearchProducts(SearchProductsRequest) returns (SearchReply) {
+    option (google.api.http) = {get: "/v1/search"};
+  }
+
+  // 分面统计，用于筛选面板展示各选项的命中数量。
+  rpc Facets(FacetsRequest) returns (FacetsReply) {
+    option (google.api.http) = {get: "/v1/search/facets"};
+  }
+
+  // 全量重建索引。管理接口，用新索引别名切换以避免重建期间搜索不可用。
+  rpc Reindex(ReindexRequest) returns (ReindexReply) {}
+
+  // 索引健康状态。供管理后台与监控查看同步延迟。
+  rpc IndexStatus(IndexStatusRequest) returns (IndexStatusReply) {}
+}
+
+// FeedSort 信息流排序方式。
+enum FeedSort {
+  FEED_SORT_UNSPECIFIED = 0;
+  // 按发布时间倒序。
+  FEED_SORT_LATEST = 1;
+  // 按热度分倒序（doc.md §9.3 的热度公式）。
+  FEED_SORT_HOT = 2;
+  // 按距离。本平台的「距离」是校区层级关系而非 GPS 围栏：
+  // 同校区 > 同校异校区 > 邻校（doc.md §2.2）。
+  FEED_SORT_DISTANCE = 3;
+  // 价格升序。
+  FEED_SORT_PRICE_ASC = 4;
+  // 价格降序。
+  FEED_SORT_PRICE_DESC = 5;
+}
+
+message FeedRequest {
+  FeedSort sort = 1 [(buf.validate.field).enum.defined_only = true];
+  // 按一级或二级分类过滤，0 表示不限。
+  int64 category_id = 2;
+  // 观察者所在校区。未登录时由客户端传入或留空表示不做同校优先。
+  int64 campus_id = 3;
+  common.v1.CursorRequest page = 4;
+}
+
+// SearchFilter 检索筛选条件。
+message SearchFilter {
+  // 价格下限（分），含。
+  int64 min_price_cents = 1 [(buf.validate.field).int64.gte = 0];
+  // 价格上限（分），含。0 表示不限。
+  int64 max_price_cents = 2 [(buf.validate.field).int64.gte = 0];
+  // 成色，多选。留空表示不限。
+  repeated product.v1.Condition conditions = 3;
+  // 分类，多选。
+  repeated int64 category_ids = 4;
+  // 校区，多选。留空时结合 campus_id 做同校优先。
+  repeated int64 campus_ids = 5;
+  // 仅看在售（排除已预订）。默认 false，即在售与已预订都展示——
+  // 已预订的商品对买家仍有价值：预订可能被取消。
+  bool only_available = 6;
+}
+
+message SearchProductsRequest {
+  // 关键词，最多 50 字符。留空时等同于按筛选条件浏览。
+  string keyword = 1 [(buf.validate.field).string.max_len = 50];
+  SearchFilter filter = 2;
+  FeedSort sort = 3 [(buf.validate.field).enum.defined_only = true];
+  // 观察者所在校区，用于同校优先。
+  int64 campus_id = 4;
+  common.v1.CursorRequest page = 5;
+}
+
+message SearchReply {
+  repeated product.v1.ProductBrief products = 1;
+  common.v1.CursorReply page = 2;
+  // 命中总数的估算值。搜索引擎返回的是估算而非精确值，
+  // 用于展示「约 N 件」而不应用于分页计算。
+  int64 estimated_total = 3;
+  // 是否处于降级状态。
+  //
+  // 搜索引擎不可用时回落 MySQL 模糊匹配（doc.md §12），
+  // 此时结果质量下降且不支持部分排序方式，前端应给出提示。
+  bool degraded = 4;
+}
+
+message FacetsRequest {
+  string keyword = 1 [(buf.validate.field).string.max_len = 50];
+  SearchFilter filter = 2;
+}
+
+message FacetsReply {
+  // 各分类的命中数量，key 为 category_id。
+  map<int64, int64> category_counts = 1;
+  // 各成色的命中数量，key 为 Condition 的枚举值。
+  map<int32, int64> condition_counts = 2;
+  // 各校区的命中数量。
+  map<int64, int64> campus_counts = 3;
+  bool degraded = 4;
+}
+
+message ReindexRequest {
+  // 为 true 时清空后全量重建；为 false 时只补齐缺失文档。
+  bool rebuild = 1;
+}
+
+message ReindexReply {
+  // 已提交索引的文档数。
+  int64 indexed_count = 1;
+  // 重建耗时毫秒数。
+  int64 elapsed_ms = 2;
+}
+
+message IndexStatusRequest {}
+
+message IndexStatusReply {
+  // 搜索引擎是否可用。
+  bool healthy = 1;
+  // 索引中的文档总数。
+  int64 document_count = 2;
+  // 最近一次成功同步的事件时间，Unix 秒。
+  //
+  // 与当前时间的差值即同步延迟，是判断索引是否落后的关键指标。
+  int64 last_synced_at = 3;
+  // 待处理的死信数量。持续增长说明有事件反复消费失败。
+  int64 dead_letter_count = 4;
+}

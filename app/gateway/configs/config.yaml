@@ -1,0 +1,101 @@
+server:
+  http:
+    addr: 0.0.0.0:8000
+    timeout: 10s
+    # 图片走对象存储直传，网关只承载 JSON，1MB 已相当宽松。
+    max_body_bytes: 1048576
+  cors:
+    # 生产环境必须精确列出来源，不可用 "*"：
+    # 带 credentials 的请求在 "*" 下会被浏览器拒绝，且等于放弃同源保护。
+    allow_origins:
+      - http://localhost:3000
+      - http://127.0.0.1:3000
+    allow_methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"]
+    allow_headers: ["Content-Type", "Authorization", "X-Client", "X-Requested-With"]
+    allow_credentials: true
+    max_age: 600s
+
+registry:
+  etcd:
+    endpoints:
+      - ${ETCD_ENDPOINT:127.0.0.1:2379}
+    dial_timeout: 5s
+    namespace: ${ETCD_NAMESPACE:/fleamarket/dev}
+    ttl: 15s
+
+observability:
+  environment: ${APP_ENV:dev}
+  log:
+    level: ${LOG_LEVEL:debug}
+    format: ${LOG_FORMAT:text}
+    add_source: true
+  trace:
+    # 布尔字段不能用 ${VAR:default}：kratos 的环境变量替换产出字符串，
+    # 而 protojson 对 bool 只接受字面量。按环境切换请用独立 config 文件。
+    enabled: false
+    endpoint: ${OTLP_ENDPOINT:127.0.0.1:4318}
+    sample_ratio: 1.0
+    insecure: true
+
+auth:
+  # 必须与 user-service 的 jwt_secret 一致，否则网关无法校验其签发的令牌。
+  jwt_secret: ${JWT_SECRET:dev-only-jwt-secret-at-least-32-bytes-long}
+  access_ttl: 7200s
+  refresh_ttl: 2592000s
+  refresh_cookie:
+    name: fm_refresh
+    path: /
+    domain: ""
+    # 本地 http 调试需为 false；生产必须为 true，
+    # 否则 refresh_token 会在明文 HTTP 上传输。
+    secure: false
+    # Strict 会让从邮件里点开的认证链接丢失登录态，故用 lax。
+    same_site: lax
+
+downstream:
+  user:
+    name: user-service
+    timeout: 3s
+  product:
+    name: product-service
+    timeout: 3s
+  search:
+    name: search-service
+    timeout: 3s
+  trade:
+    name: trade-service
+    timeout: 3s
+  im:
+    name: im-service
+    timeout: 3s
+  review:
+    name: review-service
+    timeout: 3s
+  notify:
+    name: notify-service
+    timeout: 3s
+  admin:
+    name: admin-service
+    timeout: 3s
+
+rate_limit:
+  # 三个维度叠加生效：IP 防单机刷量，用户防单账号滥用，
+  # write_ops 防对高成本接口（发短信、发邮件、举报）的定向滥用。
+  per_ip:
+    rate: 50
+    burst: 100
+  per_user:
+    rate: 20
+    burst: 40
+  write_ops:
+    rate: 1
+    burst: 5
+  # 桶的空闲回收时间。以 IP 为键时键空间等于互联网 IP 空间，
+  # 不回收会让限流组件自己成为内存耗尽的入口。
+  idle_ttl: 600s
+
+docs:
+  enabled: true
+  # 相对于进程工作目录（app/gateway/）。
+  dir: ../../docs
+  path: /docs

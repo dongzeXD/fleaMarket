@@ -1,0 +1,285 @@
+syntax = "proto3";
+
+package user.v1;
+
+option go_package = "github.com/fleamarket/api/user/v1;userv1";
+
+import "google/api/annotations.proto";
+import "buf/validate/validate.proto";
+import "common/v1/common.proto";
+// CampusAuthStatus 定义在 campus_auth.proto。
+import "user/v1/campus_auth.proto";
+
+// UserService 用户档案、社交关系与信誉分。
+//
+// 其中 BatchGetUserBrief / IsBlocked / AdjustCredit 为服务间内部接口，
+// 不暴露 HTTP 注解，仅供其他微服务通过 gRPC 调用。
+service UserService {
+  // 查询本人完整档案。
+  rpc GetMe(GetMeRequest) returns (UserProfile) {
+    option (google.api.http) = {get: "/v1/users/me"};
+  }
+
+  // 更新本人昵称与头像。
+  rpc UpdateMe(UpdateMeRequest) returns (UserProfile) {
+    option (google.api.http) = {
+      patch: "/v1/users/me"
+      body: "*"
+    };
+  }
+
+  // 查看他人主页。返回内容已按隐私规则裁剪（不含手机号、学号）。
+  rpc GetUserHomepage(GetUserHomepageRequest) returns (UserHomepage) {
+    option (google.api.http) = {get: "/v1/users/{user_id}/homepage"};
+  }
+
+  // 关注用户。
+  rpc FollowUser(FollowUserRequest) returns (FollowUserReply) {
+    option (google.api.http) = {
+      post: "/v1/users/{user_id}/follow"
+      body: "*"
+    };
+  }
+
+  // 取消关注。
+  rpc UnfollowUser(UnfollowUserRequest) returns (UnfollowUserReply) {
+    option (google.api.http) = {delete: "/v1/users/{user_id}/follow"};
+  }
+
+  // 拉黑用户。拉黑后双向屏蔽：对方的会话消息不再投递，其商品不再出现在信息流。
+  rpc BlockUser(BlockUserRequest) returns (BlockUserReply) {
+    option (google.api.http) = {
+      post: "/v1/users/{user_id}/block"
+      body: "*"
+    };
+  }
+
+  // 取消拉黑。
+  rpc UnblockUser(UnblockUserRequest) returns (UnblockUserReply) {
+    option (google.api.http) = {delete: "/v1/users/{user_id}/block"};
+  }
+
+  // 我的关注列表。
+  rpc ListFollowing(ListFollowingRequest) returns (ListFollowingReply) {
+    option (google.api.http) = {get: "/v1/users/me/following"};
+  }
+
+  // 我的黑名单。
+  rpc ListBlocked(ListBlockedRequest) returns (ListBlockedReply) {
+    option (google.api.http) = {get: "/v1/users/me/blocked"};
+  }
+
+  // 批量获取用户摘要。内部接口，供 product/trade/im 服务回填卖家信息。
+  rpc BatchGetUserBrief(BatchGetUserBriefRequest) returns (BatchGetUserBriefReply) {}
+
+  // 判断两个用户间是否存在任一方向的拉黑关系。内部接口，供 im-service 前置校验。
+  rpc IsBlocked(IsBlockedRequest) returns (IsBlockedReply) {}
+
+  // 调整信誉分并记录流水。内部接口，幂等键为 (reason_code, ref_id)。
+  rpc AdjustCredit(AdjustCreditRequest) returns (AdjustCreditReply) {}
+
+  // 查询发布准入信息。内部接口，供 product-service 在发布前校验资格。
+  //
+  // 与 BatchGetUserBrief 分开是因为后者不含账号状态：
+  // 从「能查到这个用户」推断「未被封禁」是错的——被封禁的账号依然存在。
+  // 发布准入必须拿到明确的 status 字段。
+  rpc GetSellerInfo(GetSellerInfoRequest) returns (SellerInfo) {}
+}
+
+message GetMeRequest {}
+
+message UpdateMeRequest {
+  // 昵称，2~20 字符。
+  string nickname = 1 [(buf.validate.field).string = {min_len: 2, max_len: 20}];
+  // 头像对象存储 key。
+  string avatar_key = 2;
+}
+
+// UserProfile 本人完整档案。手机号一律脱敏，不下发明文。
+message UserProfile {
+  int64 user_id = 1;
+  string nickname = 2;
+  common.v1.ImageRef avatar = 3;
+  // 脱敏手机号，如 "138****8000"。未绑定时为空。
+  string phone_masked = 4;
+  // 信誉分，0~200，初始 100。
+  int32 credit_score = 5;
+  // 校园认证状态。未认证用户不可发布商品、不可发起会话。
+  CampusAuthStatus campus_auth_status = 6;
+  // 认证通过的校区信息，未认证时为空。
+  common.v1.CampusRef campus = 7;
+  // 是否已绑定微信。
+  bool wechat_bound = 8;
+  // 注册时间，Unix 秒。
+  int64 created_at = 9;
+}
+
+message GetUserHomepageRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+// UserHomepage 他人主页聚合视图。
+//
+// 商品列表与交易记录由 gateway 并发调用 product-service / trade-service 聚合填充；
+// 若下游超时，对应字段留空并置 partial=true，不阻断主信息展示。
+message UserHomepage {
+  UserBrief user = 1;
+  // 在售商品数。
+  int32 on_sale_count = 2;
+  // 累计成交数。
+  int32 sold_count = 3;
+  // 收到的评价数。
+  int32 review_count = 4;
+  // 好评率，0~100。
+  int32 positive_rate = 5;
+  // 关注数 / 粉丝数。
+  int32 following_count = 6;
+  int32 follower_count = 7;
+  // 当前登录用户是否已关注 / 已拉黑此人。
+  bool is_following = 8;
+  bool is_blocked = 9;
+  // 是否存在下游聚合失败导致的字段缺失。
+  bool partial = 10;
+}
+
+// UserBrief 用户摘要，跨服务展示用的最小集合。
+message UserBrief {
+  int64 user_id = 1;
+  string nickname = 2;
+  common.v1.ImageRef avatar = 3;
+  int32 credit_score = 4;
+  // 是否已通过校园认证。前端据此展示认证徽标。
+  bool campus_verified = 5;
+  common.v1.CampusRef campus = 6;
+}
+
+message FollowUserRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message FollowUserReply {}
+
+message UnfollowUserRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message UnfollowUserReply {}
+
+// BlockReason 拉黑原因，用于风控统计。
+enum BlockReason {
+  BLOCK_REASON_UNSPECIFIED = 0;
+  BLOCK_REASON_HARASSMENT = 1;
+  BLOCK_REASON_FRAUD_SUSPECT = 2;
+  BLOCK_REASON_SPAM = 3;
+  BLOCK_REASON_OTHER = 99;
+}
+
+message BlockUserRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+  BlockReason reason = 2 [(buf.validate.field).enum.defined_only = true];
+}
+
+message BlockUserReply {}
+
+message UnblockUserRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+message UnblockUserReply {}
+
+message ListFollowingRequest {
+  common.v1.CursorRequest page = 1;
+}
+
+message ListFollowingReply {
+  repeated UserBrief users = 1;
+  common.v1.CursorReply page = 2;
+}
+
+message ListBlockedRequest {
+  common.v1.CursorRequest page = 1;
+}
+
+message ListBlockedReply {
+  repeated UserBrief users = 1;
+  common.v1.CursorReply page = 2;
+}
+
+message BatchGetUserBriefRequest {
+  // 用户 ID 列表，单次最多 100 个。
+  repeated int64 user_ids = 1 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 100
+  }];
+}
+
+message BatchGetUserBriefReply {
+  // key 为 user_id。查不到的 ID 不会出现在 map 中，调用方需自行兜底。
+  map<int64, UserBrief> users = 1;
+}
+
+message GetSellerInfoRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+
+// AccountStatus 账号状态。
+enum AccountStatus {
+  ACCOUNT_STATUS_UNSPECIFIED = 0;
+  ACCOUNT_STATUS_NORMAL = 1;
+  ACCOUNT_STATUS_BANNED = 2;
+  ACCOUNT_STATUS_DELETED = 3;
+}
+
+// SellerInfo 发布准入信息。
+message SellerInfo {
+  int64 user_id = 1;
+  AccountStatus status = 2;
+  // 是否已通过校园认证。未认证不可发布商品、不可发起会话。
+  bool campus_verified = 3;
+  // 认证通过的学校与校区。商品发布时以此作为默认归属。
+  int64 school_id = 4;
+  int64 campus_id = 5;
+}
+
+message IsBlockedRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 peer_user_id = 2 [(buf.validate.field).int64.gt = 0];
+}
+
+message IsBlockedReply {
+  // 任一方向存在拉黑即为 true。
+  bool blocked = 1;
+}
+
+// CreditReason 信誉分变更原因。分值规则集中在 user-service 内实现，
+// 调用方只需声明「发生了什么」，不决定「加减多少分」。
+enum CreditReason {
+  CREDIT_REASON_UNSPECIFIED = 0;
+  // 收到好评。
+  CREDIT_REASON_REVIEW_POSITIVE = 1;
+  // 收到中评。
+  CREDIT_REASON_REVIEW_NEUTRAL = 2;
+  // 收到差评。
+  CREDIT_REASON_REVIEW_NEGATIVE = 3;
+  // 完成一笔交易。
+  CREDIT_REASON_TRADE_COMPLETED = 4;
+  // 违规被处罚。
+  CREDIT_REASON_VIOLATION = 5;
+  // 预订后无故取消。
+  CREDIT_REASON_ORDER_ABANDONED = 6;
+}
+
+message AdjustCreditRequest {
+  int64 user_id = 1 [(buf.validate.field).int64.gt = 0];
+  CreditReason reason = 2 [(buf.validate.field).enum.defined_only = true];
+  // 关联业务对象 ID（订单 ID、评价 ID 等）。
+  // 与 reason 共同构成幂等键，重复提交不会重复加减分。
+  int64 ref_id = 3 [(buf.validate.field).int64.gt = 0];
+}
+
+message AdjustCreditReply {
+  // 变更后的信誉分。
+  int32 credit_score = 1;
+  // 本次实际变更值。若命中幂等则为 0。
+  int32 delta = 2;
+}

@@ -1,0 +1,3315 @@
+openapi: 3.0.3
+info:
+  title: 校园跳蚤市场 API
+  description: 校园二手交易平台对外 HTTP API。全部接口经 api-gateway 暴露，需在 Authorization 头携带 Bearer access_token（登录与学校字典类接口除外）。
+  version: v1
+paths:
+  /v1/admin/moderation/tasks:
+    get:
+      tags:
+      - ModerationService
+      description: 人工审核工单列表。供 admin 后台。
+      operationId: ModerationService_ListTasks
+      parameters:
+      - name: status
+        in: query
+        description: 只看某状态，0 表示全部（但默认应传 PENDING 看待处理工单）。
+        schema:
+          enum:
+          - TASK_STATUS_UNSPECIFIED
+          - TASK_STATUS_AUTO_PASSED
+          - TASK_STATUS_AUTO_REJECTED
+          - TASK_STATUS_PENDING
+          - TASK_STATUS_MANUAL_PASSED
+          - TASK_STATUS_MANUAL_REJECTED
+          type: string
+          format: enum
+      - name: targetType
+        in: query
+        schema:
+          enum:
+          - TARGET_TYPE_UNSPECIFIED
+          - TARGET_TYPE_PRODUCT
+          - TARGET_TYPE_WANTED
+          - TARGET_TYPE_MESSAGE
+          - TARGET_TYPE_USER_PROFILE
+          type: string
+          format: enum
+      - name: page.page
+        in: query
+        description: 页码，从 1 开始。
+        schema:
+          type: integer
+          format: int32
+      - name: page.pageSize
+        in: query
+        description: 每页条数，1~100。
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListTasksReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/admin/moderation/tasks/{taskId}/decide:
+    post:
+      tags:
+      - ModerationService
+      description: 处置人工审核工单。供 admin 后台。
+      operationId: ModerationService_DecideTask
+      parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecideTaskRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModerationTask'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/admin/reports:
+    get:
+      tags:
+      - ReportService
+      description: 举报工单列表。供 admin 后台。
+      operationId: ReportService_ListReports
+      parameters:
+      - name: status
+        in: query
+        schema:
+          enum:
+          - REPORT_STATUS_UNSPECIFIED
+          - REPORT_STATUS_PENDING
+          - REPORT_STATUS_ACTIONED
+          - REPORT_STATUS_DISMISSED
+          type: string
+          format: enum
+      - name: page.page
+        in: query
+        description: 页码，从 1 开始。
+        schema:
+          type: integer
+          format: int32
+      - name: page.pageSize
+        in: query
+        description: 每页条数，1~100。
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListReportsReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/admin/reports/{reportId}/handle:
+    post:
+      tags:
+      - ReportService
+      description: 处置举报。供 admin 后台。
+      operationId: ReportService_HandleReport
+      parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HandleReportRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/admin/sensitive-words:
+    get:
+      tags:
+      - ReportService
+      description: 敏感词列表。供 admin 后台。
+      operationId: ReportService_ListSensitiveWords
+      parameters:
+      - name: category
+        in: query
+        schema:
+          enum:
+          - SENSITIVE_WORD_CATEGORY_UNSPECIFIED
+          - SENSITIVE_WORD_CATEGORY_PROHIBITED
+          - SENSITIVE_WORD_CATEGORY_CONTACT
+          - SENSITIVE_WORD_CATEGORY_ACADEMIC
+          - SENSITIVE_WORD_CATEGORY_POLITICAL_PORN
+          type: string
+          format: enum
+      - name: page.page
+        in: query
+        description: 页码，从 1 开始。
+        schema:
+          type: integer
+          format: int32
+      - name: page.pageSize
+        in: query
+        description: 每页条数，1~100。
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSensitiveWordsReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      tags:
+      - ReportService
+      description: 新增敏感词。变更后经 Pub/Sub 通知各实例热更新词库。
+      operationId: ReportService_AddSensitiveWord
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddSensitiveWordRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SensitiveWord'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/admin/sensitive-words/{wordId}:
+    delete:
+      tags:
+      - ReportService
+      description: 删除敏感词。
+      operationId: ReportService_DeleteSensitiveWord
+      parameters:
+      - name: wordId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteSensitiveWordReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/auth/login/phone:
+    post:
+      tags:
+      - AuthService
+      description: 手机号验证码登录。账号不存在时自动注册并直接登录。
+      operationId: AuthService_LoginByPhone
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginByPhoneRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/auth/login/wechat:
+    post:
+      tags:
+      - AuthService
+      description: 微信登录。传入微信授权返回的临时 code。
+      operationId: AuthService_LoginByWechat
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginByWechatRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/auth/logout:
+    post:
+      tags:
+      - AuthService
+      description: 退出登录，服务端将 refresh_token 加入吊销名单。
+      operationId: AuthService_Logout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/auth/refresh:
+    post:
+      tags:
+      - AuthService
+      description: 用 refresh_token 换取新的 access_token。
+      operationId: AuthService_RefreshToken
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/auth/sms-code:
+    post:
+      tags:
+      - AuthService
+      description: "发送短信验证码。\n\n 限流：同一手机号 60 秒内仅可发送一次，单日上限 10 次。\n 出于账号枚举防护，无论手机号是否已注册均返回成功。"
+      operationId: AuthService_SendSmsCode
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendSmsCodeRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendSmsCodeReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/campus-auth/email:
+    post:
+      tags:
+      - CampusAuthService
+      description: "发起校园邮箱认证。\n\n 服务端校验邮箱域名后缀命中该校白名单后，发送一封含签名链接的邮件，\n 链接 30 分钟内有效且仅可使用一次。"
+      operationId: CampusAuthService_StartEmailAuth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartEmailAuthRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartEmailAuthReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/campus-auth/email/verify:
+    get:
+      tags:
+      - CampusAuthService
+      description: 校验邮箱认证链接中的 token，成功后认证状态置为通过。
+      operationId: CampusAuthService_VerifyEmailAuth
+      parameters:
+      - name: token
+        in: query
+        description: 邮件链接中携带的签名 token。
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyEmailAuthReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/campus-auth/me:
+    get:
+      tags:
+      - CampusAuthService
+      description: 查询当前用户的认证状态与驳回原因。
+      operationId: CampusAuthService_GetMyCampusAuth
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampusAuth'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/campus-auth/student-card:
+    post:
+      tags:
+      - CampusAuthService
+      description: 提交学号认证材料，进入人工审核队列。
+      operationId: CampusAuthService_SubmitStudentCardAuth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitStudentCardAuthRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitStudentCardAuthReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/campuses/{campusId}/pois:
+    get:
+      tags:
+      - CategoryService
+      description: 查询某校区的面交地点。用于发布时选点与地图展示。
+      operationId: CategoryService_ListPOIs
+      parameters:
+      - name: campusId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: types
+        in: query
+        description: 按类型筛选，留空返回全部。
+        schema:
+          type: array
+          items:
+            enum:
+            - POI_TYPE_UNSPECIFIED
+            - POI_TYPE_GATE
+            - POI_TYPE_DORM
+            - POI_TYPE_CANTEEN
+            - POI_TYPE_LIBRARY
+            - POI_TYPE_TEACHING_BUILDING
+            - POI_TYPE_PARCEL_STATION
+            - POI_TYPE_OTHER
+            type: string
+            format: enum
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListPOIsReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/categories:
+    get:
+      tags:
+      - CategoryService
+      description: 查询完整分类树。公开接口，前端可长期缓存。
+      operationId: CategoryService_ListCategories
+      parameters:
+      - name: enabledOnly
+        in: query
+        description: 为 true 时只返回启用的分类。管理后台传 false 以查看全部。
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListCategoriesReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/favorites:
+    get:
+      tags:
+      - FavoriteService
+      description: 我的收藏列表。
+      operationId: FavoriteService_ListFavorites
+      parameters:
+      - name: page.cursor
+        in: query
+        description: 上一页返回的 next_cursor，首次请求留空。
+        schema:
+          type: string
+      - name: page.limit
+        in: query
+        description: 拉取条数，1~50。
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListFavoritesReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/feed:
+    get:
+      tags:
+      - SearchService
+      description: "首页信息流。\n\n 「同校优先」由服务端按配额交错实现，不依赖搜索引擎的相关度评分：\n 三路查询（同校区 / 同校异校区 / 全局）按固定比例填充，\n 结果是确定性且可解释的，不会因评分波动而失效。"
+      operationId: SearchService_Feed
+      parameters:
+      - name: sort
+        in: query
+        schema:
+          enum:
+          - FEED_SORT_UNSPECIFIED
+          - FEED_SORT_LATEST
+          - FEED_SORT_HOT
+          - FEED_SORT_DISTANCE
+          - FEED_SORT_PRICE_ASC
+          - FEED_SORT_PRICE_DESC
+          type: string
+          format: enum
+      - name: categoryId
+        in: query
+        description: 按一级或二级分类过滤，0 表示不限。
+        schema:
+          type: string
+      - name: campusId
+        in: query
+        description: 观察者所在校区。未登录时由客户端传入或留空表示不做同校优先。
+        schema:
+          type: string
+      - name: page.cursor
+        in: query
+        description: 上一页返回的 next_cursor，首次请求留空。
+        schema:
+          type: string
+      - name: page.limit
+        in: query
+        description: 拉取条数，1~50。
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/orders:
+    get:
+      tags:
+      - OrderService
+      description: 我的交易记录。可按角色与状态筛选。
+      operationId: OrderService_ListMyOrders
+      parameters:
+      - name: role
+        in: query
+        schema:
+          enum:
+          - ORDER_ROLE_UNSPECIFIED
+          - ORDER_ROLE_BUYER
+          - ORDER_ROLE_SELLER
+          type: string
+          format: enum
+      - name: statuses
+        in: query
+        description: 按状态筛选，留空表示全部。
+        schema:
+          type: array
+          items:
+            enum:
+            - ORDER_STATUS_UNSPECIFIED
+            - ORDER_STATUS_PENDING_SELLER
+            - ORDER_STATUS_ACCEPTED
+            - ORDER_STATUS_AWAITING_PEER
+            - ORDER_STATUS_COMPLETED
+            - ORDER_STATUS_REJECTED
+            - ORDER_STATUS_CANCELLED
+            - ORDER_STATUS_EXPIRED
+            type: string
+            format: enum
+      - name: page.cursor
+        in: query
+        description: 上一页返回的 next_cursor，首次请求留空。
+        schema:
+          type: string
+      - name: page.limit
+        in: query
+        description: 拉取条数，1~50。
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListOrdersReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      tags:
+      - OrderService
+      description: "发起预订。\n\n 商品会被原子地锁定为「已预订」，其他买家无法再预订\n （由 product-service 的 CAS 更新保证）。"
+      operationId: OrderService_CreateOrder
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/orders/{orderId}:
+    get:
+      tags:
+      - OrderService
+      description: 查看订单详情。仅买卖双方可见。
+      operationId: OrderService_GetOrder
+      parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/orders/{orderId}/accept:
+    post:
+      tags:
+      - OrderService
+      description: 卖家接受预订。
+      operationId: OrderService_AcceptOrder
+      parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptOrderRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/orders/{orderId}/cancel:
+    post:
+      tags:
+      - OrderService
+      description: "取消订单。买卖双方都可发起。\n\n 买家在卖家已接受后取消会扣信誉分——占用了商品又不履约，\n 对卖家和其他潜在买家都造成了损失（doc.md §9.4）。"
+      operationId: OrderService_CancelOrder
+      parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelOrderRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/orders/{orderId}/done:
+    post:
+      tags:
+      - OrderService
+      description: "确认交易完成。\n\n 需双方都确认：单方确认后进入等待对方状态，\n 72 小时内对方未确认则自动完成（doc.md §9.4）。\n 这样设计是因为线下交易平台无法验证货物是否真的交付，\n 只能依赖双方确认，同时用自动完成兜住「一方忘记点」的情况。"
+      operationId: OrderService_ConfirmDone
+      parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmDoneRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/orders/{orderId}/meetup:
+    patch:
+      tags:
+      - OrderService
+      description: 约定或修改面交时间地点。双方均可提议，对方可见。
+      operationId: OrderService_UpdateMeetup
+      parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeetupRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/orders/{orderId}/reject:
+    post:
+      tags:
+      - OrderService
+      description: 卖家拒绝预订。商品恢复在售。
+      operationId: OrderService_RejectOrder
+      parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectOrderRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/orders/{orderId}/reviews:
+    get:
+      tags:
+      - ReviewService
+      description: 查看某订单的评价（双方的）。
+      operationId: ReviewService_ListOrderReviews
+      parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListReviewsReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      tags:
+      - ReviewService
+      description: "提交评价。\n\n 7 天互评期内可提交，提交后不可修改——可改的评价会变成\n 双方互相要求「改成好评」的筹码，反而损害真实性。"
+      operationId: ReviewService_CreateReview
+      parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/products:
+    post:
+      tags:
+      - ProductService
+      description: "发布闲置商品。\n\n 发布后进入 PENDING_REVIEW，经内容审核通过才对外可见。"
+      operationId: ProductService_CreateProduct
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/products/image-upload-url:
+    post:
+      tags:
+      - ProductService
+      description: "申请图片上传凭证。\n\n 图片由客户端直传对象存储，不经过业务服务——一张 5MB 的图片若经服务端\n 转发，在高并发下会迅速吃满内存与网卡。\n\n 流程：调用本接口拿到预签名 PUT 地址 → 客户端上传\
+        \ → 用返回的 object_key\n 调用 CreateProduct。服务端在发布时校验 key 归属与对象是否真实存在。"
+      operationId: ProductService_CreateImageUploadURL
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateImageUploadURLRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateImageUploadURLReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/products/mine:
+    get:
+      tags:
+      - ProductService
+      description: 我发布的商品。
+      operationId: ProductService_ListMyProducts
+      parameters:
+      - name: statuses
+        in: query
+        description: 按状态筛选。留空返回全部状态。
+        schema:
+          type: array
+          items:
+            enum:
+            - PRODUCT_STATUS_UNSPECIFIED
+            - PRODUCT_STATUS_PENDING_REVIEW
+            - PRODUCT_STATUS_ON_SALE
+            - PRODUCT_STATUS_RESERVED
+            - PRODUCT_STATUS_SOLD
+            - PRODUCT_STATUS_OFFLINE
+            - PRODUCT_STATUS_REJECTED
+            type: string
+            format: enum
+      - name: page.cursor
+        in: query
+        description: 上一页返回的 next_cursor，首次请求留空。
+        schema:
+          type: string
+      - name: page.limit
+        in: query
+        description: 拉取条数，1~50。
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListProductsReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/products/{productId}:
+    get:
+      tags:
+      - ProductService
+      description: 查看商品详情。未登录可访问，以便分享链接被未注册用户打开。
+      operationId: ProductService_GetProduct
+      parameters:
+      - name: productId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags:
+      - ProductService
+      description: "删除商品（软删除）。仅卖家本人可调用，已售出的商品不可删除——\n 它是交易记录与评价的引用对象。"
+      operationId: ProductService_DeleteProduct
+      parameters:
+      - name: productId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteProductReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      tags:
+      - ProductService
+      description: "修改商品。仅卖家本人可调用。\n\n 改价会写入价格历史并触发降价提醒（doc.md §9.2）。"
+      operationId: ProductService_UpdateProduct
+      parameters:
+      - name: productId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/products/{productId}/favorite:
+    post:
+      tags:
+      - FavoriteService
+      description: 收藏商品。重复收藏视为成功，不报错。
+      operationId: FavoriteService_AddFavorite
+      parameters:
+      - name: productId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddFavoriteRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddFavoriteReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags:
+      - FavoriteService
+      description: 取消收藏。未收藏时调用也返回成功。
+      operationId: FavoriteService_RemoveFavorite
+      parameters:
+      - name: productId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemoveFavoriteReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/products/{productId}/status:
+    post:
+      tags:
+      - ProductService
+      description: 变更商品状态（下架、重新上架等）。仅卖家本人可调用。
+      operationId: ProductService_ChangeProductStatus
+      parameters:
+      - name: productId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeProductStatusRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/reports:
+    post:
+      tags:
+      - ReportService
+      description: 提交举报。任何登录用户可举报商品、用户、消息等。
+      operationId: ReportService_CreateReport
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReportRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/schools:
+    get:
+      tags:
+      - CampusAuthService
+      description: 查询学校列表，供客户端选择。支持按名称模糊搜索。
+      operationId: CampusAuthService_ListSchools
+      parameters:
+      - name: keyword
+        in: query
+        description: 学校名称关键词，留空返回热门学校。
+        schema:
+          type: string
+      - name: page.page
+        in: query
+        description: 页码，从 1 开始。
+        schema:
+          type: integer
+          format: int32
+      - name: page.pageSize
+        in: query
+        description: 每页条数，1~100。
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSchoolsReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/schools/{schoolId}/campuses:
+    get:
+      tags:
+      - CampusAuthService
+      description: 查询指定学校下的校区列表。
+      operationId: CampusAuthService_ListCampuses
+      parameters:
+      - name: schoolId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListCampusesReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/search:
+    get:
+      tags:
+      - SearchService
+      description: 关键词搜索 + 多维筛选。
+      operationId: SearchService_SearchProducts
+      parameters:
+      - name: keyword
+        in: query
+        description: 关键词，最多 50 字符。留空时等同于按筛选条件浏览。
+        schema:
+          type: string
+      - name: filter.minPriceCents
+        in: query
+        description: 价格下限（分），含。
+        schema:
+          type: string
+      - name: filter.maxPriceCents
+        in: query
+        description: 价格上限（分），含。0 表示不限。
+        schema:
+          type: string
+      - name: filter.conditions
+        in: query
+        description: 成色，多选。留空表示不限。
+        schema:
+          type: array
+          items:
+            enum:
+            - CONDITION_UNSPECIFIED
+            - CONDITION_NEW
+            - CONDITION_LIKE_NEW
+            - CONDITION_LIGHTLY_USED
+            - CONDITION_WELL_USED
+            type: string
+            format: enum
+      - name: filter.categoryIds
+        in: query
+        description: 分类，多选。
+        schema:
+          type: array
+          items:
+            type: string
+      - name: filter.campusIds
+        in: query
+        description: 校区，多选。留空时结合 campus_id 做同校优先。
+        schema:
+          type: array
+          items:
+            type: string
+      - name: filter.onlyAvailable
+        in: query
+        description: "仅看在售（排除已预订）。默认 false，即在售与已预订都展示——\n 已预订的商品对买家仍有价值：预订可能被取消。"
+        schema:
+          type: boolean
+      - name: sort
+        in: query
+        schema:
+          enum:
+          - FEED_SORT_UNSPECIFIED
+          - FEED_SORT_LATEST
+          - FEED_SORT_HOT
+          - FEED_SORT_DISTANCE
+          - FEED_SORT_PRICE_ASC
+          - FEED_SORT_PRICE_DESC
+          type: string
+          format: enum
+      - name: campusId
+        in: query
+        description: 观察者所在校区，用于同校优先。
+        schema:
+          type: string
+      - name: page.cursor
+        in: query
+        description: 上一页返回的 next_cursor，首次请求留空。
+        schema:
+          type: string
+      - name: page.limit
+        in: query
+        description: 拉取条数，1~50。
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/search/facets:
+    get:
+      tags:
+      - SearchService
+      description: 分面统计，用于筛选面板展示各选项的命中数量。
+      operationId: SearchService_Facets
+      parameters:
+      - name: keyword
+        in: query
+        schema:
+          type: string
+      - name: filter.minPriceCents
+        in: query
+        description: 价格下限（分），含。
+        schema:
+          type: string
+      - name: filter.maxPriceCents
+        in: query
+        description: 价格上限（分），含。0 表示不限。
+        schema:
+          type: string
+      - name: filter.conditions
+        in: query
+        description: 成色，多选。留空表示不限。
+        schema:
+          type: array
+          items:
+            enum:
+            - CONDITION_UNSPECIFIED
+            - CONDITION_NEW
+            - CONDITION_LIKE_NEW
+            - CONDITION_LIGHTLY_USED
+            - CONDITION_WELL_USED
+            type: string
+            format: enum
+      - name: filter.categoryIds
+        in: query
+        description: 分类，多选。
+        schema:
+          type: array
+          items:
+            type: string
+      - name: filter.campusIds
+        in: query
+        description: 校区，多选。留空时结合 campus_id 做同校优先。
+        schema:
+          type: array
+          items:
+            type: string
+      - name: filter.onlyAvailable
+        in: query
+        description: "仅看在售（排除已预订）。默认 false，即在售与已预订都展示——\n 已预订的商品对买家仍有价值：预订可能被取消。"
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacetsReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/users/me:
+    get:
+      tags:
+      - UserService
+      description: 查询本人完整档案。
+      operationId: UserService_GetMe
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      tags:
+      - UserService
+      description: 更新本人昵称与头像。
+      operationId: UserService_UpdateMe
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/users/me/blocked:
+    get:
+      tags:
+      - UserService
+      description: 我的黑名单。
+      operationId: UserService_ListBlocked
+      parameters:
+      - name: page.cursor
+        in: query
+        description: 上一页返回的 next_cursor，首次请求留空。
+        schema:
+          type: string
+      - name: page.limit
+        in: query
+        description: 拉取条数，1~50。
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListBlockedReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/users/me/following:
+    get:
+      tags:
+      - UserService
+      description: 我的关注列表。
+      operationId: UserService_ListFollowing
+      parameters:
+      - name: page.cursor
+        in: query
+        description: 上一页返回的 next_cursor，首次请求留空。
+        schema:
+          type: string
+      - name: page.limit
+        in: query
+        description: 拉取条数，1~50。
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListFollowingReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/users/{sellerId}/products:
+    get:
+      tags:
+      - ProductService
+      description: 某用户公开在售的商品，用于他人主页。
+      operationId: ProductService_ListUserProducts
+      parameters:
+      - name: sellerId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: page.cursor
+        in: query
+        description: 上一页返回的 next_cursor，首次请求留空。
+        schema:
+          type: string
+      - name: page.limit
+        in: query
+        description: 拉取条数，1~50。
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListProductsReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/users/{userId}/block:
+    post:
+      tags:
+      - UserService
+      description: 拉黑用户。拉黑后双向屏蔽：对方的会话消息不再投递，其商品不再出现在信息流。
+      operationId: UserService_BlockUser
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlockUserRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlockUserReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags:
+      - UserService
+      description: 取消拉黑。
+      operationId: UserService_UnblockUser
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnblockUserReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/users/{userId}/follow:
+    post:
+      tags:
+      - UserService
+      description: 关注用户。
+      operationId: UserService_FollowUser
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FollowUserRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowUserReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags:
+      - UserService
+      description: 取消关注。
+      operationId: UserService_UnfollowUser
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnfollowUserReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/users/{userId}/homepage:
+    get:
+      tags:
+      - UserService
+      description: 查看他人主页。返回内容已按隐私规则裁剪（不含手机号、学号）。
+      operationId: UserService_GetUserHomepage
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserHomepage'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/users/{userId}/reviews:
+    get:
+      tags:
+      - ReviewService
+      description: 查看某用户收到的评价，用于个人主页。
+      operationId: ReviewService_ListUserReviews
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: scoreGroup
+        in: query
+        description: 只看某一类评分。0 表示全部，1 好评，2 中评，3 差评。
+        schema:
+          type: integer
+          format: int32
+      - name: page.cursor
+        in: query
+        description: 上一页返回的 next_cursor，首次请求留空。
+        schema:
+          type: string
+      - name: page.limit
+        in: query
+        description: 拉取条数，1~50。
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListReviewsReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/wanted:
+    get:
+      tags:
+      - WantedService
+      description: 浏览求购帖列表，按校区与分类筛选。
+      operationId: WantedService_ListWanted
+      parameters:
+      - name: categoryId
+        in: query
+        description: 按分类筛选，0 表示全部。
+        schema:
+          type: string
+      - name: campusId
+        in: query
+        description: 按校区筛选，0 表示全部。
+        schema:
+          type: string
+      - name: keyword
+        in: query
+        schema:
+          type: string
+      - name: page.cursor
+        in: query
+        description: 上一页返回的 next_cursor，首次请求留空。
+        schema:
+          type: string
+      - name: page.limit
+        in: query
+        description: 拉取条数，1~50。
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListWantedReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      tags:
+      - WantedService
+      description: 发布求购帖。与发布商品一样要求已通过校园认证。
+      operationId: WantedService_CreateWanted
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWantedRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WantedPost'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/wanted/mine:
+    get:
+      tags:
+      - WantedService
+      description: 我发布的求购帖。
+      operationId: WantedService_ListMyWanted
+      parameters:
+      - name: page.cursor
+        in: query
+        description: 上一页返回的 next_cursor，首次请求留空。
+        schema:
+          type: string
+      - name: page.limit
+        in: query
+        description: 拉取条数，1~50。
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListWantedReply'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/wanted/{wantedId}:
+    get:
+      tags:
+      - WantedService
+      description: 查看求购帖详情。
+      operationId: WantedService_GetWanted
+      parameters:
+      - name: wantedId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WantedPost'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/wanted/{wantedId}/close:
+    post:
+      tags:
+      - WantedService
+      description: 关闭求购帖（已找到或不再需要）。仅发帖人可调用。
+      operationId: WantedService_CloseWanted
+      parameters:
+      - name: wantedId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CloseWantedRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WantedPost'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  schemas:
+    AcceptOrderRequest:
+      type: object
+      properties:
+        orderId:
+          type: string
+        meetPoiId:
+          type: string
+          description: 卖家确认或修改的面交地点与时间。
+        meetTime:
+          type: string
+    AddFavoriteReply:
+      type: object
+      properties:
+        favoriteCount:
+          type: integer
+          description: 收藏后的总收藏数，供前端直接更新计数而无需重新拉取。
+          format: int32
+    AddFavoriteRequest:
+      type: object
+      properties:
+        productId:
+          type: string
+    AddSensitiveWordRequest:
+      type: object
+      properties:
+        word:
+          type: string
+        category:
+          enum:
+          - SENSITIVE_WORD_CATEGORY_UNSPECIFIED
+          - SENSITIVE_WORD_CATEGORY_PROHIBITED
+          - SENSITIVE_WORD_CATEGORY_CONTACT
+          - SENSITIVE_WORD_CATEGORY_ACADEMIC
+          - SENSITIVE_WORD_CATEGORY_POLITICAL_PORN
+          type: string
+          format: enum
+        level:
+          type: integer
+          description: 处置级别：1 告警 2 复审 3 拦截。
+          format: int32
+    BlockUserReply:
+      type: object
+      properties: {}
+    BlockUserRequest:
+      type: object
+      properties:
+        userId:
+          type: string
+        reason:
+          enum:
+          - BLOCK_REASON_UNSPECIFIED
+          - BLOCK_REASON_HARASSMENT
+          - BLOCK_REASON_FRAUD_SUSPECT
+          - BLOCK_REASON_SPAM
+          - BLOCK_REASON_OTHER
+          type: string
+          format: enum
+    Campus:
+      type: object
+      properties:
+        campusId:
+          type: string
+        schoolId:
+          type: string
+        name:
+          type: string
+        location:
+          allOf:
+          - $ref: '#/components/schemas/GeoPoint'
+          description: 校区中心坐标，用于地图初始视野。
+    CampusAuth:
+      type: object
+      properties:
+        authId:
+          type: string
+        userId:
+          type: string
+        method:
+          enum:
+          - CAMPUS_AUTH_METHOD_UNSPECIFIED
+          - CAMPUS_AUTH_METHOD_EDU_EMAIL
+          - CAMPUS_AUTH_METHOD_STUDENT_CARD
+          type: string
+          format: enum
+        status:
+          enum:
+          - CAMPUS_AUTH_STATUS_UNSPECIFIED
+          - CAMPUS_AUTH_STATUS_NONE
+          - CAMPUS_AUTH_STATUS_PENDING
+          - CAMPUS_AUTH_STATUS_PASSED
+          - CAMPUS_AUTH_STATUS_REJECTED
+          - CAMPUS_AUTH_STATUS_EXPIRED
+          type: string
+          format: enum
+        campus:
+          $ref: '#/components/schemas/CampusRef'
+        studentNoMasked:
+          type: string
+          description: 脱敏学号，如 "2021****01"。仅本人可见。
+        rejectReason:
+          type: string
+          description: 驳回原因，status 为 REJECTED 时有值。
+        verifiedAt:
+          type: string
+          description: 认证通过时间，Unix 秒。
+        expireAt:
+          type: string
+          description: 认证过期时间，Unix 秒。0 表示不过期。
+      description: CampusAuth 一条认证记录。
+    CampusRef:
+      type: object
+      properties:
+        campusId:
+          type: string
+        name:
+          type: string
+        school:
+          $ref: '#/components/schemas/SchoolRef'
+      description: CampusRef 校区摘要。校区是本平台「距离」与「同校优先」的基本单位。
+    CancelOrderRequest:
+      type: object
+      properties:
+        orderId:
+          type: string
+        reason:
+          enum:
+          - CANCEL_REASON_UNSPECIFIED
+          - CANCEL_REASON_BUYER_CHANGED_MIND
+          - CANCEL_REASON_SCHEDULE_CONFLICT
+          - CANCEL_REASON_ITEM_MISMATCH
+          - CANCEL_REASON_PEER_UNREACHABLE
+          - CANCEL_REASON_OTHER
+          type: string
+          format: enum
+        remark:
+          type: string
+    Category:
+      type: object
+      properties:
+        categoryId:
+          type: string
+        parentId:
+          type: string
+          description: 父分类 ID。一级分类为 0。
+        name:
+          type: string
+        iconKey:
+          type: string
+          description: 图标对象 key。
+        sort:
+          type: integer
+          format: int32
+        enabled:
+          type: boolean
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+          description: 二级分类。仅一级分类的响应中填充。
+      description: Category 商品分类。
+    ChangeProductStatusRequest:
+      type: object
+      properties:
+        productId:
+          type: string
+        event:
+          enum:
+          - PRODUCT_EVENT_UNSPECIFIED
+          - PRODUCT_EVENT_OFFLINE
+          - PRODUCT_EVENT_REPUBLISH
+          type: string
+          format: enum
+    CloseWantedRequest:
+      type: object
+      properties:
+        wantedId:
+          type: string
+    ConfirmDoneRequest:
+      type: object
+      properties:
+        orderId:
+          type: string
+    CreateImageUploadURLReply:
+      type: object
+      properties:
+        uploadUrl:
+          type: string
+          description: 预签名上传地址，客户端以 PUT 上传。
+        objectKey:
+          type: string
+          description: 对象 key，上传成功后回传给业务接口。
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: 上传时必须携带的请求头。Content-Type 参与签名，改动会导致上传被拒。
+        expireAt:
+          type: string
+          description: 凭证过期时间，Unix 秒。
+        maxSizeBytes:
+          type: string
+          description: 允许的最大字节数。
+    CreateImageUploadURLRequest:
+      type: object
+      properties:
+        extension:
+          type: string
+          description: 文件扩展名，不含点号，如 "jpg"。仅允许图片格式。
+        sizeBytes:
+          type: string
+          description: 文件字节数，用于服务端提前拒绝过大的文件。
+        purpose:
+          enum:
+          - UPLOAD_PURPOSE_UNSPECIFIED
+          - UPLOAD_PURPOSE_PRODUCT_IMAGE
+          type: string
+          format: enum
+    CreateOrderRequest:
+      type: object
+      properties:
+        productId:
+          type: string
+        meetPoiId:
+          type: string
+          description: 建议面交地点，可选。留空表示待协商。
+        meetTime:
+          type: string
+          description: 建议面交时间，Unix 秒。可选。
+        message:
+          type: string
+          description: 给卖家的留言，最多 200 字符。
+    CreateProductRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          description: 商品标题，2~60 字符。禁止包含联系方式，违规会被审核驳回。
+        description:
+          type: string
+          description: 详细描述，最多 2000 字符。
+        priceCents:
+          type: string
+          description: 价格，单位分。0 表示免费赠送。
+        originalPriceCents:
+          type: string
+          description: 原价，单位分。可选，用于展示「原价 ¥x」。
+        condition:
+          enum:
+          - CONDITION_UNSPECIFIED
+          - CONDITION_NEW
+          - CONDITION_LIKE_NEW
+          - CONDITION_LIGHTLY_USED
+          - CONDITION_WELL_USED
+          type: string
+          format: enum
+        categoryId:
+          type: string
+          description: 二级分类 ID。
+        campusId:
+          type: string
+          description: 交易校区。默认取卖家认证的校区。
+        poiId:
+          type: string
+          description: 建议面交地点的 POI ID，可选。
+        imageKeys:
+          type: array
+          items:
+            type: string
+          description: 图片 object_key 列表，1~9 个。第一张为封面。
+    CreateReportRequest:
+      type: object
+      properties:
+        targetType:
+          type: integer
+          description: 举报对象类型，复用 moderation 的 TargetType 语义但此处独立定义避免跨文件耦合。
+          format: int32
+        targetId:
+          type: string
+        reason:
+          enum:
+          - REPORT_REASON_UNSPECIFIED
+          - REPORT_REASON_FAKE
+          - REPORT_REASON_FRAUD
+          - REPORT_REASON_HARASSMENT
+          - REPORT_REASON_PROHIBITED
+          - REPORT_REASON_ACADEMIC_MISCONDUCT
+          - REPORT_REASON_SPAM
+          - REPORT_REASON_OTHER
+          type: string
+          format: enum
+        description:
+          type: string
+        imageKeys:
+          type: array
+          items:
+            type: string
+          description: 证据图片的 object_key，最多 3 张。
+    CreateReviewRequest:
+      type: object
+      properties:
+        orderId:
+          type: string
+        score:
+          type: integer
+          description: "评分 1~5。\n\n 4~5 计好评、3 计中评、1~2 计差评，映射到信誉分变更\n （规则在 user-service 内，见 doc.md §9.4）。"
+          format: int32
+        tags:
+          type: array
+          items:
+            enum:
+            - REVIEW_TAG_UNSPECIFIED
+            - REVIEW_TAG_ACCURATE_DESCRIPTION
+            - REVIEW_TAG_GOOD_COMMUNICATION
+            - REVIEW_TAG_PUNCTUAL
+            - REVIEW_TAG_GOOD_VALUE
+            - REVIEW_TAG_INACCURATE_DESCRIPTION
+            - REVIEW_TAG_LATE
+            - REVIEW_TAG_POOR_COMMUNICATION
+            type: string
+            format: enum
+        content:
+          type: string
+        anonymous:
+          type: boolean
+          description: 匿名评价。仍会计入信誉分，但不展示评价者昵称。
+    CreateWantedRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          description: 求购标题，2~60 字符。
+        description:
+          type: string
+          description: 详细说明，最多 1000 字符。
+        budgetMaxCents:
+          type: string
+          description: 心理价位上限，单位分。0 表示价格可议。
+        categoryId:
+          type: string
+        campusId:
+          type: string
+        validDays:
+          type: integer
+          description: 有效天数，1~30。到期后自动置为 EXPIRED。
+          format: int32
+    CursorReply:
+      type: object
+      properties:
+        nextCursor:
+          type: string
+          description: 下一页游标，`has_more=false` 时为空字符串。
+        hasMore:
+          type: boolean
+          description: 是否还有更多数据。
+      description: CursorReply 游标分页响应元信息。
+    DecideTaskRequest:
+      type: object
+      properties:
+        taskId:
+          type: string
+        pass:
+          type: boolean
+          description: 是否通过。
+        reason:
+          type: string
+    DeleteProductReply:
+      type: object
+      properties: {}
+    DeleteSensitiveWordReply:
+      type: object
+      properties: {}
+    FacetsReply:
+      type: object
+      properties:
+        categoryCounts:
+          type: object
+          additionalProperties:
+            type: string
+          description: 各分类的命中数量，key 为 category_id。
+        conditionCounts:
+          type: object
+          additionalProperties:
+            type: string
+          description: 各成色的命中数量，key 为 Condition 的枚举值。
+        campusCounts:
+          type: object
+          additionalProperties:
+            type: string
+          description: 各校区的命中数量。
+        degraded:
+          type: boolean
+    FollowUserReply:
+      type: object
+      properties: {}
+    FollowUserRequest:
+      type: object
+      properties:
+        userId:
+          type: string
+    GeoPoint:
+      type: object
+      properties:
+        lat:
+          type: number
+          description: 纬度，-90 ~ 90。
+          format: double
+        lng:
+          type: number
+          description: 经度，-180 ~ 180。
+          format: double
+      description: GeoPoint 经纬度坐标（WGS84）。
+    HandleReportRequest:
+      type: object
+      properties:
+        reportId:
+          type: string
+        actioned:
+          type: boolean
+          description: 是否采信举报。
+        handleResult:
+          type: string
+    ImageRef:
+      type: object
+      properties:
+        objectKey:
+          type: string
+          description: 对象存储中的 key，由上传接口返回。
+        url:
+          type: string
+          description: 可访问的完整 URL，仅出现在响应中，请求中会被忽略。
+        width:
+          type: integer
+          description: 原图宽度（像素），用于前端预留占位避免布局抖动。
+          format: int32
+        height:
+          type: integer
+          description: 原图高度（像素）。
+          format: int32
+      description: "ImageRef 图片引用。业务侧只传对象存储的 object_key，\n 由服务端拼接 CDN 域名与图片处理参数后下发 url。"
+    ListBlockedReply:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserBrief'
+        page:
+          $ref: '#/components/schemas/CursorReply'
+    ListCampusesReply:
+      type: object
+      properties:
+        campuses:
+          type: array
+          items:
+            $ref: '#/components/schemas/Campus'
+    ListCategoriesReply:
+      type: object
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+          description: 一级分类，children 中携带其二级分类。
+    ListFavoritesReply:
+      type: object
+      properties:
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductBrief'
+        page:
+          $ref: '#/components/schemas/CursorReply'
+    ListFollowingReply:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserBrief'
+        page:
+          $ref: '#/components/schemas/CursorReply'
+    ListOrdersReply:
+      type: object
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/Order'
+        page:
+          $ref: '#/components/schemas/CursorReply'
+    ListPOIsReply:
+      type: object
+      properties:
+        pois:
+          type: array
+          items:
+            $ref: '#/components/schemas/POI'
+    ListProductsReply:
+      type: object
+      properties:
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductBrief'
+        page:
+          $ref: '#/components/schemas/CursorReply'
+    ListReportsReply:
+      type: object
+      properties:
+        reports:
+          type: array
+          items:
+            $ref: '#/components/schemas/Report'
+        page:
+          $ref: '#/components/schemas/PageReply'
+    ListReviewsReply:
+      type: object
+      properties:
+        reviews:
+          type: array
+          items:
+            $ref: '#/components/schemas/Review'
+        page:
+          $ref: '#/components/schemas/CursorReply'
+    ListSchoolsReply:
+      type: object
+      properties:
+        schools:
+          type: array
+          items:
+            $ref: '#/components/schemas/School'
+        page:
+          $ref: '#/components/schemas/PageReply'
+    ListSensitiveWordsReply:
+      type: object
+      properties:
+        words:
+          type: array
+          items:
+            $ref: '#/components/schemas/SensitiveWord'
+        page:
+          $ref: '#/components/schemas/PageReply'
+    ListTasksReply:
+      type: object
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModerationTask'
+        page:
+          $ref: '#/components/schemas/PageReply'
+    ListWantedReply:
+      type: object
+      properties:
+        posts:
+          type: array
+          items:
+            $ref: '#/components/schemas/WantedPost'
+        page:
+          $ref: '#/components/schemas/CursorReply'
+    LoginByPhoneRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+        code:
+          type: string
+          description: 6 位数字验证码。
+    LoginByWechatRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          description: 微信授权临时 code，一次性使用。
+        platform:
+          enum:
+          - WECHAT_PLATFORM_UNSPECIFIED
+          - WECHAT_PLATFORM_WEB
+          - WECHAT_PLATFORM_MINIAPP
+          type: string
+          format: enum
+    LoginReply:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          description: '访问令牌，放入 `Authorization: Bearer <token>`。'
+        refreshToken:
+          type: string
+          description: 刷新令牌。Web 端由服务端写 Cookie，此字段为空；小程序端返回明文。
+        expiresIn:
+          type: integer
+          description: access_token 剩余有效秒数。
+          format: int32
+        isNewUser:
+          type: boolean
+          description: 是否本次调用新建了账号。前端可据此引导进入校园认证流程。
+        profile:
+          allOf:
+          - $ref: '#/components/schemas/UserProfile'
+          description: 登录用户的档案摘要。
+    LogoutReply:
+      type: object
+      properties: {}
+    LogoutRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+    ModerationTask:
+      type: object
+      properties:
+        taskId:
+          type: string
+        targetType:
+          enum:
+          - TARGET_TYPE_UNSPECIFIED
+          - TARGET_TYPE_PRODUCT
+          - TARGET_TYPE_WANTED
+          - TARGET_TYPE_MESSAGE
+          - TARGET_TYPE_USER_PROFILE
+          type: string
+          format: enum
+        targetId:
+          type: string
+        ownerId:
+          type: string
+          description: 内容所属用户，用于统计某用户的违规频次。
+        status:
+          enum:
+          - TASK_STATUS_UNSPECIFIED
+          - TASK_STATUS_AUTO_PASSED
+          - TASK_STATUS_AUTO_REJECTED
+          - TASK_STATUS_PENDING
+          - TASK_STATUS_MANUAL_PASSED
+          - TASK_STATUS_MANUAL_REJECTED
+          type: string
+          format: enum
+        autoLevel:
+          enum:
+          - MODERATION_LEVEL_UNSPECIFIED
+          - MODERATION_LEVEL_WARN
+          - MODERATION_LEVEL_REVIEW
+          - MODERATION_LEVEL_BLOCK
+          type: string
+          description: 自动审核命中的处置级别。
+          format: enum
+        hitWords:
+          type: array
+          items:
+            type: string
+        content:
+          type: string
+          description: 送审内容摘要，供人工审核时查看。
+        reviewerId:
+          type: string
+        rejectReason:
+          type: string
+        createdAt:
+          type: string
+        decidedAt:
+          type: string
+      description: ModerationTask 一条审核记录。
+    Order:
+      type: object
+      properties:
+        orderId:
+          type: string
+        productId:
+          type: string
+        buyerId:
+          type: string
+        sellerId:
+          type: string
+        priceCents:
+          type: string
+          description: "PriceCents 成交价快照，单位分。\n\n 在锁定商品的那一刻固定下来，之后卖家改价不影响本单——\n 否则买家会在面交时发现价格变了。"
+        payChannel:
+          enum:
+          - PAY_CHANNEL_UNSPECIFIED
+          - PAY_CHANNEL_OFFLINE
+          type: string
+          format: enum
+        status:
+          enum:
+          - ORDER_STATUS_UNSPECIFIED
+          - ORDER_STATUS_PENDING_SELLER
+          - ORDER_STATUS_ACCEPTED
+          - ORDER_STATUS_AWAITING_PEER
+          - ORDER_STATUS_COMPLETED
+          - ORDER_STATUS_REJECTED
+          - ORDER_STATUS_CANCELLED
+          - ORDER_STATUS_EXPIRED
+          type: string
+          format: enum
+        meetPoiId:
+          type: string
+          description: 面交约定。
+        meetTime:
+          type: string
+        buyerMessage:
+          type: string
+          description: 买家下单时的留言。
+        buyerConfirmed:
+          type: boolean
+          description: 已确认完成的一方。双方都确认后转为 COMPLETED。
+        sellerConfirmed:
+          type: boolean
+        cancelReason:
+          enum:
+          - CANCEL_REASON_UNSPECIFIED
+          - CANCEL_REASON_BUYER_CHANGED_MIND
+          - CANCEL_REASON_SCHEDULE_CONFLICT
+          - CANCEL_REASON_ITEM_MISMATCH
+          - CANCEL_REASON_PEER_UNREACHABLE
+          - CANCEL_REASON_OTHER
+          type: string
+          description: 取消/拒绝的原因。
+          format: enum
+        cancelRemark:
+          type: string
+        cancelledBy:
+          type: string
+          description: 发起取消的一方。
+        createdAt:
+          type: string
+        acceptedAt:
+          type: string
+        completedAt:
+          type: string
+        expireAt:
+          type: string
+          description: 当前状态的超时时间，Unix 秒。0 表示不超时。
+        product:
+          allOf:
+          - $ref: '#/components/schemas/ProductBrief'
+          description: 商品摘要。由网关聚合 product-service 填充，本服务不跨服务同步调用。
+        buyerReviewed:
+          type: boolean
+          description: 双方是否已评价，用于前端决定是否展示评价入口。
+        sellerReviewed:
+          type: boolean
+      description: Order 订单（预订凭证）。
+    POI:
+      type: object
+      properties:
+        poiId:
+          type: string
+        campusId:
+          type: string
+        name:
+          type: string
+        type:
+          enum:
+          - POI_TYPE_UNSPECIFIED
+          - POI_TYPE_GATE
+          - POI_TYPE_DORM
+          - POI_TYPE_CANTEEN
+          - POI_TYPE_LIBRARY
+          - POI_TYPE_TEACHING_BUILDING
+          - POI_TYPE_PARCEL_STATION
+          - POI_TYPE_OTHER
+          type: string
+          format: enum
+        location:
+          $ref: '#/components/schemas/GeoPoint'
+        recommended:
+          type: boolean
+          description: "是否为推荐地点。推荐地点通常是人流量大、有监控的公共区域，\n 面交安全性更高。"
+      description: "POI 校园内的面交地点。\n\n 「距离」在本平台的实质是校区 + 校内地点的层级关系（doc.md §2.2），\n 而非真实 GPS 围栏——同校区内步行可达，跨校区才需要考虑距离。"
+    PageReply:
+      type: object
+      properties:
+        page:
+          type: integer
+          description: 当前页码。
+          format: int32
+        pageSize:
+          type: integer
+          description: 每页条数。
+          format: int32
+        total:
+          type: string
+          description: 符合条件的总条数。
+      description: PageReply 偏移分页响应元信息。
+    Product:
+      type: object
+      properties:
+        productId:
+          type: string
+        sellerId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        priceCents:
+          type: string
+        originalPriceCents:
+          type: string
+        condition:
+          enum:
+          - CONDITION_UNSPECIFIED
+          - CONDITION_NEW
+          - CONDITION_LIKE_NEW
+          - CONDITION_LIGHTLY_USED
+          - CONDITION_WELL_USED
+          type: string
+          format: enum
+        status:
+          enum:
+          - PRODUCT_STATUS_UNSPECIFIED
+          - PRODUCT_STATUS_PENDING_REVIEW
+          - PRODUCT_STATUS_ON_SALE
+          - PRODUCT_STATUS_RESERVED
+          - PRODUCT_STATUS_SOLD
+          - PRODUCT_STATUS_OFFLINE
+          - PRODUCT_STATUS_REJECTED
+          type: string
+          format: enum
+        rejectReason:
+          type: string
+          description: 驳回原因，status 为 REJECTED 时有值。
+        category:
+          $ref: '#/components/schemas/Category'
+        campus:
+          $ref: '#/components/schemas/CampusRef'
+        poi:
+          allOf:
+          - $ref: '#/components/schemas/POI'
+          description: 建议面交地点，未设置时为空。
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImageRef'
+          description: 图片列表，第一张为封面。
+        viewCount:
+          type: string
+        favoriteCount:
+          type: integer
+          format: int32
+        favorited:
+          type: boolean
+          description: 当前登录用户是否已收藏。未登录时为 false。
+        heatScore:
+          type: number
+          description: 热度分，用于信息流排序。
+          format: double
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      description: Product 商品完整信息。
+    ProductBrief:
+      type: object
+      properties:
+        productId:
+          type: string
+        sellerId:
+          type: string
+        title:
+          type: string
+        priceCents:
+          type: string
+        originalPriceCents:
+          type: string
+        condition:
+          enum:
+          - CONDITION_UNSPECIFIED
+          - CONDITION_NEW
+          - CONDITION_LIKE_NEW
+          - CONDITION_LIGHTLY_USED
+          - CONDITION_WELL_USED
+          type: string
+          format: enum
+        status:
+          enum:
+          - PRODUCT_STATUS_UNSPECIFIED
+          - PRODUCT_STATUS_PENDING_REVIEW
+          - PRODUCT_STATUS_ON_SALE
+          - PRODUCT_STATUS_RESERVED
+          - PRODUCT_STATUS_SOLD
+          - PRODUCT_STATUS_OFFLINE
+          - PRODUCT_STATUS_REJECTED
+          type: string
+          format: enum
+        cover:
+          allOf:
+          - $ref: '#/components/schemas/ImageRef'
+          description: 封面图。
+        campus:
+          $ref: '#/components/schemas/CampusRef'
+        favoriteCount:
+          type: integer
+          format: int32
+        favorited:
+          type: boolean
+        createdAt:
+          type: string
+      description: "ProductBrief 商品摘要，用于列表与卡片展示。\n\n 与 Product 分离是为了控制列表接口的响应体积：\n description 可达 2000 字符，一页 20 条就是 40KB 的无用传输。"
+    RefreshTokenRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+          description: 留空时服务端从 httpOnly Cookie 读取。
+    RejectOrderRequest:
+      type: object
+      properties:
+        orderId:
+          type: string
+        reason:
+          type: string
+    RemoveFavoriteReply:
+      type: object
+      properties:
+        favoriteCount:
+          type: integer
+          format: int32
+    Report:
+      type: object
+      properties:
+        reportId:
+          type: string
+        reporterId:
+          type: string
+        targetType:
+          type: integer
+          format: int32
+        targetId:
+          type: string
+        reason:
+          enum:
+          - REPORT_REASON_UNSPECIFIED
+          - REPORT_REASON_FAKE
+          - REPORT_REASON_FRAUD
+          - REPORT_REASON_HARASSMENT
+          - REPORT_REASON_PROHIBITED
+          - REPORT_REASON_ACADEMIC_MISCONDUCT
+          - REPORT_REASON_SPAM
+          - REPORT_REASON_OTHER
+          type: string
+          format: enum
+        description:
+          type: string
+        imageKeys:
+          type: array
+          items:
+            type: string
+        status:
+          enum:
+          - REPORT_STATUS_UNSPECIFIED
+          - REPORT_STATUS_PENDING
+          - REPORT_STATUS_ACTIONED
+          - REPORT_STATUS_DISMISSED
+          type: string
+          format: enum
+        handledBy:
+          type: string
+        handleResult:
+          type: string
+        createdAt:
+          type: string
+        handledAt:
+          type: string
+      description: Report 一条举报。
+    Review:
+      type: object
+      properties:
+        reviewId:
+          type: string
+        orderId:
+          type: string
+        productId:
+          type: string
+        fromUserId:
+          type: string
+          description: 评价者。匿名评价时为 0。
+        toUserId:
+          type: string
+        role:
+          enum:
+          - REVIEW_ROLE_UNSPECIFIED
+          - REVIEW_ROLE_BUYER
+          - REVIEW_ROLE_SELLER
+          type: string
+          format: enum
+        score:
+          type: integer
+          format: int32
+        tags:
+          type: array
+          items:
+            enum:
+            - REVIEW_TAG_UNSPECIFIED
+            - REVIEW_TAG_ACCURATE_DESCRIPTION
+            - REVIEW_TAG_GOOD_COMMUNICATION
+            - REVIEW_TAG_PUNCTUAL
+            - REVIEW_TAG_GOOD_VALUE
+            - REVIEW_TAG_INACCURATE_DESCRIPTION
+            - REVIEW_TAG_LATE
+            - REVIEW_TAG_POOR_COMMUNICATION
+            type: string
+            format: enum
+        content:
+          type: string
+        anonymous:
+          type: boolean
+        createdAt:
+          type: string
+        fromUser:
+          allOf:
+          - $ref: '#/components/schemas/UserBrief'
+          description: 评价者摘要。匿名时为空，由网关聚合 user-service 填充。
+      description: Review 一条评价。
+    School:
+      type: object
+      properties:
+        schoolId:
+          type: string
+        name:
+          type: string
+        province:
+          type: string
+        emailDomains:
+          type: array
+          items:
+            type: string
+          description: 该校认可的校园邮箱域名后缀，如 ["stu.pku.edu.cn", "pku.edu.cn"]。
+    SchoolRef:
+      type: object
+      properties:
+        schoolId:
+          type: string
+        name:
+          type: string
+      description: SchoolRef 学校摘要，用于在各服务响应中回显学校信息。
+    SearchReply:
+      type: object
+      properties:
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductBrief'
+        page:
+          $ref: '#/components/schemas/CursorReply'
+        estimatedTotal:
+          type: string
+          description: "命中总数的估算值。搜索引擎返回的是估算而非精确值，\n 用于展示「约 N 件」而不应用于分页计算。"
+        degraded:
+          type: boolean
+          description: "是否处于降级状态。\n\n 搜索引擎不可用时回落 MySQL 模糊匹配（doc.md §12），\n 此时结果质量下降且不支持部分排序方式，前端应给出提示。"
+    SendSmsCodeReply:
+      type: object
+      properties:
+        retryAfterSeconds:
+          type: integer
+          description: 距离可再次发送的剩余秒数。
+          format: int32
+    SendSmsCodeRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+          description: 中国大陆手机号，11 位数字。
+        scene:
+          enum:
+          - SMS_SCENE_UNSPECIFIED
+          - SMS_SCENE_LOGIN
+          - SMS_SCENE_REBIND
+          type: string
+          description: 验证码用途。
+          format: enum
+    SensitiveWord:
+      type: object
+      properties:
+        wordId:
+          type: string
+        word:
+          type: string
+        category:
+          enum:
+          - SENSITIVE_WORD_CATEGORY_UNSPECIFIED
+          - SENSITIVE_WORD_CATEGORY_PROHIBITED
+          - SENSITIVE_WORD_CATEGORY_CONTACT
+          - SENSITIVE_WORD_CATEGORY_ACADEMIC
+          - SENSITIVE_WORD_CATEGORY_POLITICAL_PORN
+          type: string
+          format: enum
+        level:
+          type: integer
+          format: int32
+        createdAt:
+          type: string
+      description: SensitiveWord 一条敏感词。
+    StartEmailAuthReply:
+      type: object
+      properties:
+        emailMasked:
+          type: string
+          description: 邮件已发往的地址（脱敏），供前端提示用户查收。
+        expireAt:
+          type: string
+          description: 链接过期时间，Unix 秒。
+    StartEmailAuthRequest:
+      type: object
+      properties:
+        schoolId:
+          type: string
+        campusId:
+          type: string
+        eduEmail:
+          type: string
+          description: 校园邮箱。域名后缀必须命中该校白名单，否则返回 400。
+    SubmitStudentCardAuthReply:
+      type: object
+      properties:
+        auth:
+          $ref: '#/components/schemas/CampusAuth'
+    SubmitStudentCardAuthRequest:
+      type: object
+      properties:
+        schoolId:
+          type: string
+        campusId:
+          type: string
+        studentNo:
+          type: string
+          description: 学号。
+        realName:
+          type: string
+          description: 真实姓名。
+        imageKeys:
+          type: array
+          items:
+            type: string
+          description: "学生证照片的对象存储 key，1~2 张。\n\n 隐私说明：照片仅用于人工核验，认证结论产出后 30 天内自动删除，\n 长期只保留认证结果，不保留原图。"
+    UnblockUserReply:
+      type: object
+      properties: {}
+    UnfollowUserReply:
+      type: object
+      properties: {}
+    UpdateMeRequest:
+      type: object
+      properties:
+        nickname:
+          type: string
+          description: 昵称，2~20 字符。
+        avatarKey:
+          type: string
+          description: 头像对象存储 key。
+    UpdateMeetupRequest:
+      type: object
+      properties:
+        orderId:
+          type: string
+        meetPoiId:
+          type: string
+        meetTime:
+          type: string
+    UpdateProductRequest:
+      type: object
+      properties:
+        productId:
+          type: string
+        title:
+          type: string
+          description: "以下字段为可选更新。未提供的字段保持原值。\n\n 用 optional 而非「空值即不更新」：价格为 0 是合法的（免费赠送），\n 若以零值表示「不更新」，卖家就无法把商品改成免费。"
+        description:
+          type: string
+        priceCents:
+          type: string
+        condition:
+          enum:
+          - CONDITION_UNSPECIFIED
+          - CONDITION_NEW
+          - CONDITION_LIKE_NEW
+          - CONDITION_LIGHTLY_USED
+          - CONDITION_WELL_USED
+          type: string
+          format: enum
+        categoryId:
+          type: string
+        poiId:
+          type: string
+        imageKeys:
+          type: array
+          items:
+            type: string
+          description: 提供时整体替换图片列表。
+    UserBrief:
+      type: object
+      properties:
+        userId:
+          type: string
+        nickname:
+          type: string
+        avatar:
+          $ref: '#/components/schemas/ImageRef'
+        creditScore:
+          type: integer
+          format: int32
+        campusVerified:
+          type: boolean
+          description: 是否已通过校园认证。前端据此展示认证徽标。
+        campus:
+          $ref: '#/components/schemas/CampusRef'
+      description: UserBrief 用户摘要，跨服务展示用的最小集合。
+    UserHomepage:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/UserBrief'
+        onSaleCount:
+          type: integer
+          description: 在售商品数。
+          format: int32
+        soldCount:
+          type: integer
+          description: 累计成交数。
+          format: int32
+        reviewCount:
+          type: integer
+          description: 收到的评价数。
+          format: int32
+        positiveRate:
+          type: integer
+          description: 好评率，0~100。
+          format: int32
+        followingCount:
+          type: integer
+          description: 关注数 / 粉丝数。
+          format: int32
+        followerCount:
+          type: integer
+          format: int32
+        isFollowing:
+          type: boolean
+          description: 当前登录用户是否已关注 / 已拉黑此人。
+        isBlocked:
+          type: boolean
+        partial:
+          type: boolean
+          description: 是否存在下游聚合失败导致的字段缺失。
+      description: "UserHomepage 他人主页聚合视图。\n\n 商品列表与交易记录由 gateway 并发调用 product-service / trade-service 聚合填充；\n 若下游超时，对应字段留空并置\
+        \ partial=true，不阻断主信息展示。"
+    UserProfile:
+      type: object
+      properties:
+        userId:
+          type: string
+        nickname:
+          type: string
+        avatar:
+          $ref: '#/components/schemas/ImageRef'
+        phoneMasked:
+          type: string
+          description: 脱敏手机号，如 "138****8000"。未绑定时为空。
+        creditScore:
+          type: integer
+          description: 信誉分，0~200，初始 100。
+          format: int32
+        campusAuthStatus:
+          enum:
+          - CAMPUS_AUTH_STATUS_UNSPECIFIED
+          - CAMPUS_AUTH_STATUS_NONE
+          - CAMPUS_AUTH_STATUS_PENDING
+          - CAMPUS_AUTH_STATUS_PASSED
+          - CAMPUS_AUTH_STATUS_REJECTED
+          - CAMPUS_AUTH_STATUS_EXPIRED
+          type: string
+          description: 校园认证状态。未认证用户不可发布商品、不可发起会话。
+          format: enum
+        campus:
+          allOf:
+          - $ref: '#/components/schemas/CampusRef'
+          description: 认证通过的校区信息，未认证时为空。
+        wechatBound:
+          type: boolean
+          description: 是否已绑定微信。
+        createdAt:
+          type: string
+          description: 注册时间，Unix 秒。
+      description: UserProfile 本人完整档案。手机号一律脱敏，不下发明文。
+    VerifyEmailAuthReply:
+      type: object
+      properties:
+        auth:
+          $ref: '#/components/schemas/CampusAuth'
+    WantedPost:
+      type: object
+      properties:
+        wantedId:
+          type: string
+        userId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        budgetMaxCents:
+          type: string
+        category:
+          $ref: '#/components/schemas/Category'
+        campus:
+          $ref: '#/components/schemas/CampusRef'
+        status:
+          enum:
+          - WANTED_STATUS_UNSPECIFIED
+          - WANTED_STATUS_OPEN
+          - WANTED_STATUS_CLOSED
+          - WANTED_STATUS_EXPIRED
+          type: string
+          format: enum
+        viewCount:
+          type: string
+        createdAt:
+          type: string
+        expireAt:
+          type: string
+          description: 过期时间，Unix 秒。
+      description: WantedPost 一条求购帖。
+    Error:
+      type: object
+      description: 统一错误响应。由 kratos errors 产出，全部接口的失败响应均为此结构。
+      properties:
+        code:
+          type: integer
+          format: int32
+          description: HTTP 状态码，与响应的 HTTP status 一致。
+        reason:
+          type: string
+          description: 机器可读的错误原因，如 PRODUCT_ALREADY_RESERVED。客户端应按此字段分支处理，不要匹配 message 文案。
+        message:
+          type: string
+          description: 面向用户的中文提示，可直接展示。
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: 结构化上下文。例如限流时携带 retry_after（剩余等待秒数），资源冲突时携带 product_id。
+      required:
+      - code
+      - reason
+      - message
+tags:
+- name: AuthService
+  description: "AuthService 负责账号注册与登录，签发访问凭证。\n\n 支持两种登录方式，二者通过 `wx_unionid` 归一到同一账号：\n   1. 手机号 + 短信验证码\n   2. 微信一键登录（Web\
+    \ 端走开放平台扫码，小程序端走 code2session）\n\n 令牌策略：access_token 有效期 2 小时，由客户端保存在内存；\n refresh_token 有效期 30 天，由服务端写入 httpOnly Cookie，避免\
+    \ XSS 窃取长期凭证。"
+- name: CampusAuthService
+  description: "CampusAuthService 校园身份认证。\n\n 这是整个平台的信任基石：未通过认证的账号只能浏览，不能发布商品、不能发起会话。\n 提供两条认证路径，校园邮箱可自动通过，学号需人工审核。"
+- name: CategoryService
+  description: "CategoryService 分类体系与校园地点字典。\n\n 分类是两级结构：一级用于导航分区，二级是商品实际挂载的叶子节点。\n 不做更深层级——校园二手的品类有限，三级分类只会让用户在选择时迷路。"
+- name: FavoriteService
+  description: "FavoriteService 收藏。\n\n 收藏除了「稍后再看」，还承担降价与上新提醒的订阅关系：\n 收藏后卖家改价会触发通知（doc.md §9.7）。"
+- name: ModerationService
+  description: "ModerationService 内容审核。\n\n 审核分两层（doc.md §9.6）：\n   - 自动审核：AC 自动机敏感词匹配。BLOCK 级直接驳回，\n     REVIEW 级转人工，无命中则自动通过。\n\
+    \   - 人工审核：由运营在 admin 后台处理转人工的工单。\n\n SubmitProduct 等提交接口是内部接口，由各业务服务调用；\n 工单处置接口供 admin-service 调用。"
+- name: OrderService
+  description: "OrderService 预订与交易流程。\n\n 本平台以线下当面交易为主，不引入资金托管（doc.md §1.3）。\n 因此「订单」的实质是一个预订凭证 + 面交约定，而非支付单据：\n 它解决的是「避免多人重复问同一件商品」和「双方对时间地点有共识」。\n\
+    \n 状态机（doc.md §9.4）：\n\n   PENDING_SELLER ──accept──> ACCEPTED ──buyer_done/seller_done──> AWAITING_PEER\n        │  \
+    \                      │                                      │\n        ├─reject──> REJECTED     ├─cancel──> CANCELLED\
+    \                  └─peer_done──> COMPLETED\n        └─timeout──> EXPIRED     └─timeout──> EXPIRED"
+- name: ProductService
+  description: "ProductService 商品的发布与生命周期管理。\n\n 状态机（doc.md §9.2）：\n\n   PENDING_REVIEW ──pass──> ON_SALE ──reserve──> RESERVED\
+    \ ──complete──> SOLD\n        │                      │                    │\n        └──reject──> REJECTED  └──offline──>\
+    \ OFFLINE └──cancel──> ON_SALE\n                                    │\n                                    └──republish──>\
+    \ PENDING_REVIEW\n\n 发布前置条件：调用方必须已通过校园认证，否则返回 403 CAMPUS_AUTH_REQUIRED。"
+- name: ReportService
+  description: ReportService 举报与敏感词库管理。
+- name: ReviewService
+  description: "ReviewService 双向评价。\n\n 只有完成的订单可以评价，且买卖双方各评一次（doc.md §9.4）。\n 评价结果会转成信誉分变更，因此它是平台信任体系的数据来源。"
+- name: SearchService
+  description: "SearchService 商品检索。\n\n 索引由本服务消费 product.* 事件异步维护（doc.md §9.3），\n 因此存在秒级延迟——刚发布的商品可能短时间内搜不到。\n 这是可接受的：商品详情页走\
+    \ product-service 直读，分享链接立即可用。"
+- name: UserService
+  description: "UserService 用户档案、社交关系与信誉分。\n\n 其中 BatchGetUserBrief / IsBlocked / AdjustCredit 为服务间内部接口，\n 不暴露 HTTP 注解，仅供其他微服务通过\
+    \ gRPC 调用。"
+- name: WantedService
+  description: "WantedService 求购帖，即反向发布的「我想要」。\n\n 为什么需要它：校园二手的供给是零散且偶然的——某本教材此刻没人在卖，\n 但下周可能就有人清书架。求购帖让需求可被看见，把「等运气」变成「等匹配」。"

@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+// common.v1 存放跨服务复用的通用消息与枚举。
+//
+// 约束：此包只允许出现与具体业务无关的结构（分页、金额、图片引用等）。
+// 任何带业务语义的 message 必须放到对应服务的包中。
+package common.v1;
+
+option go_package = "github.com/fleamarket/api/common/v1;commonv1";
+
+import "buf/validate/validate.proto";
+
+// PageRequest 偏移分页请求，适用于总数有限且需要跳页的列表（如管理后台）。
+message PageRequest {
+  // 页码，从 1 开始。
+  int32 page = 1 [(buf.validate.field).int32.gte = 1];
+  // 每页条数，1~100。
+  int32 page_size = 2 [(buf.validate.field).int32 = {gte: 1, lte: 100}];
+}
+
+// PageReply 偏移分页响应元信息。
+message PageReply {
+  // 当前页码。
+  int32 page = 1;
+  // 每页条数。
+  int32 page_size = 2;
+  // 符合条件的总条数。
+  int64 total = 3;
+}
+
+// CursorRequest 游标分页请求，适用于信息流等持续下拉场景。
+//
+// 相比偏移分页，游标分页在数据实时插入时不会出现重复或漏项。
+message CursorRequest {
+  // 上一页返回的 next_cursor，首次请求留空。
+  string cursor = 1;
+  // 拉取条数，1~50。
+  int32 limit = 2 [(buf.validate.field).int32 = {gte: 1, lte: 50}];
+}
+
+// CursorReply 游标分页响应元信息。
+message CursorReply {
+  // 下一页游标，`has_more=false` 时为空字符串。
+  string next_cursor = 1;
+  // 是否还有更多数据。
+  bool has_more = 2;
+}
+
+// Money 金额。为规避浮点误差，全链路以「分」为最小单位的整数传递。
+message Money {
+  // 金额，单位：分。允许为 0（表示免费赠送）。
+  int64 cents = 1 [(buf.validate.field).int64.gte = 0];
+  // 货币代码，ISO 4217。本项目固定 "CNY"。
+  string currency = 2;
+}
+
+// ImageRef 图片引用。业务侧只传对象存储的 object_key，
+// 由服务端拼接 CDN 域名与图片处理参数后下发 url。
+message ImageRef {
+  // 对象存储中的 key，由上传接口返回。
+  string object_key = 1 [(buf.validate.field).string.min_len = 1];
+  // 可访问的完整 URL，仅出现在响应中，请求中会被忽略。
+  string url = 2;
+  // 原图宽度（像素），用于前端预留占位避免布局抖动。
+  int32 width = 3;
+  // 原图高度（像素）。
+  int32 height = 4;
+}
+
+// GeoPoint 经纬度坐标（WGS84）。
+message GeoPoint {
+  // 纬度，-90 ~ 90。
+  double lat = 1 [(buf.validate.field).double = {gte: -90, lte: 90}];
+  // 经度，-180 ~ 180。
+  double lng = 2 [(buf.validate.field).double = {gte: -180, lte: 180}];
+}
+
+// SchoolRef 学校摘要，用于在各服务响应中回显学校信息。
+message SchoolRef {
+  int64 school_id = 1;
+  string name = 2;
+}
+
+// CampusRef 校区摘要。校区是本平台「距离」与「同校优先」的基本单位。
+message CampusRef {
+  int64 campus_id = 1;
+  string name = 2;
+  SchoolRef school = 3;
+}
+
+// SortOrder 排序方向。
+enum SortOrder {
+  SORT_ORDER_UNSPECIFIED = 0;
+  SORT_ORDER_ASC = 1;
+  SORT_ORDER_DESC = 2;
+}

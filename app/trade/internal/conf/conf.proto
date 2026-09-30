@@ -1,0 +1,114 @@
+syntax = "proto3";
+package kratos.api;
+
+option go_package = "github.com/fleamarket/app/trade/internal/conf;conf";
+
+import "google/protobuf/duration.proto";
+
+message Bootstrap {
+  Server server = 1;
+  Data data = 2;
+  Registry registry = 3;
+  Observability observability = 4;
+  Auth auth = 5;
+  Downstream downstream = 6;
+  Business business = 7;
+}
+
+message Downstream {
+  message Service {
+    string name = 1;
+    google.protobuf.Duration timeout = 2;
+  }
+  Service product = 1;
+  Service user = 2;
+}
+
+message Business {
+  int32 worker_id = 1;
+  string mq_namespace = 2;
+}
+
+message Server {
+  message HTTP {
+    string network = 1;
+    string addr = 2;
+    google.protobuf.Duration timeout = 3;
+  }
+  message GRPC {
+    string network = 1;
+    string addr = 2;
+    google.protobuf.Duration timeout = 3;
+  }
+  HTTP http = 1;
+  GRPC grpc = 2;
+}
+
+message Data {
+  message Database {
+    // DSN。凭据由环境变量注入，不写入配置文件。
+    string source = 1;
+    int32 max_open_conns = 2;
+    int32 max_idle_conns = 3;
+    google.protobuf.Duration conn_max_lifetime = 4;
+    google.protobuf.Duration slow_threshold = 5;
+    // 打印全部 SQL，仅开发环境开启。
+    bool debug = 6;
+  }
+  message Redis {
+    string addr = 1;
+    string password = 2;
+    int32 db = 3;
+    int32 pool_size = 4;
+    google.protobuf.Duration read_timeout = 5;
+    google.protobuf.Duration write_timeout = 6;
+    // key 前缀，多环境共用实例时用于隔离。
+    string key_prefix = 7;
+  }
+  Database database = 1;
+  Redis redis = 2;
+}
+
+// Registry etcd 服务注册发现配置。
+message Registry {
+  message Etcd {
+    repeated string endpoints = 1;
+    google.protobuf.Duration dial_timeout = 2;
+    string username = 3;
+    string password = 4;
+    // key 前缀，必须按环境隔离，否则开发实例会被生产流量发现。
+    string namespace = 5;
+    // 实例租约时长，决定崩溃后多久被摘除。
+    google.protobuf.Duration ttl = 6;
+  }
+  Etcd etcd = 1;
+}
+
+// Observability 日志与链路追踪。
+message Observability {
+  message Log {
+    // debug / info / warn / error
+    string level = 1;
+    // text / json
+    string format = 2;
+    bool add_source = 3;
+  }
+  message Trace {
+    bool enabled = 1;
+    // OTLP/HTTP 端点，如 localhost:4318
+    string endpoint = 2;
+    double sample_ratio = 3;
+    bool insecure = 4;
+  }
+  Log log = 1;
+  Trace trace = 2;
+  string environment = 3;
+}
+
+// Auth JWT 校验配置。下游服务只需校验，签发仅 user-service 使用。
+message Auth {
+  // 签名密钥，必须由环境变量注入。
+  string jwt_secret = 1;
+  google.protobuf.Duration access_ttl = 2;
+  google.protobuf.Duration refresh_ttl = 3;
+}

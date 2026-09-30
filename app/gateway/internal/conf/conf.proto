@@ -1,0 +1,136 @@
+syntax = "proto3";
+package kratos.api;
+
+option go_package = "github.com/fleamarket/app/gateway/internal/conf;conf";
+
+import "google/protobuf/duration.proto";
+
+// api-gateway 的配置。
+//
+// 网关不持有任何业务数据，因此没有 Data 段——
+// 它只需要知道「对外怎么暴露」「下游在哪」「怎么校验令牌」。
+message Bootstrap {
+  Server server = 1;
+  Registry registry = 2;
+  Observability observability = 3;
+  Auth auth = 4;
+  Downstream downstream = 5;
+  RateLimit rate_limit = 6;
+  Docs docs = 7;
+}
+
+message Server {
+  message HTTP {
+    string network = 1;
+    string addr = 2;
+    google.protobuf.Duration timeout = 3;
+    // 请求体大小上限（字节）。0 表示用默认值。
+    //
+    // 必须设置：没有上限时，一个构造的超大请求体就能让网关 OOM。
+    int64 max_body_bytes = 4;
+  }
+  message CORS {
+    // 允许的来源。生产环境必须精确列出，不可用 "*"——
+    // 配合 credentials 时 "*" 会被浏览器拒绝，且等于放弃同源保护。
+    repeated string allow_origins = 1;
+    repeated string allow_methods = 2;
+    repeated string allow_headers = 3;
+    bool allow_credentials = 4;
+    google.protobuf.Duration max_age = 5;
+  }
+  HTTP http = 1;
+  CORS cors = 2;
+}
+
+message Registry {
+  message Etcd {
+    repeated string endpoints = 1;
+    google.protobuf.Duration dial_timeout = 2;
+    string username = 3;
+    string password = 4;
+    string namespace = 5;
+    google.protobuf.Duration ttl = 6;
+  }
+  Etcd etcd = 1;
+}
+
+message Observability {
+  message Log {
+    string level = 1;
+    string format = 2;
+    bool add_source = 3;
+  }
+  message Trace {
+    bool enabled = 1;
+    string endpoint = 2;
+    double sample_ratio = 3;
+    bool insecure = 4;
+  }
+  Log log = 1;
+  Trace trace = 2;
+  string environment = 3;
+}
+
+// Auth 令牌校验。网关是唯一解 JWT 的地方。
+message Auth {
+  string jwt_secret = 1;
+  google.protobuf.Duration access_ttl = 2;
+  google.protobuf.Duration refresh_ttl = 3;
+
+  // RefreshCookie refresh_token 的 Cookie 设置。
+  //
+  // Web 端把 refresh_token 放 httpOnly Cookie 而非响应体，
+  // 使其不可被 JS 读取，从而免受 XSS 窃取长期凭证（doc.md §10.4）。
+  message RefreshCookie {
+    string name = 1;
+    string path = 2;
+    string domain = 3;
+    bool secure = 4;
+    // lax / strict / none
+    string same_site = 5;
+  }
+  RefreshCookie refresh_cookie = 4;
+}
+
+// Downstream 下游服务的调用参数。
+message Downstream {
+  message Service {
+    // 服务名，用于拼 discovery:///<name>。
+    string name = 1;
+    google.protobuf.Duration timeout = 2;
+  }
+  Service user = 1;
+  Service product = 2;
+  Service search = 3;
+  Service trade = 4;
+  Service im = 5;
+  Service review = 6;
+  Service notify = 7;
+  Service admin = 8;
+}
+
+// RateLimit 限流参数。
+message RateLimit {
+  // Bucket 令牌桶：每秒补充 rate 个令牌，最多积压 burst 个。
+  message Bucket {
+    double rate = 1;
+    int32 burst = 2;
+  }
+  // 按客户端 IP 限流，防单机刷量。
+  Bucket per_ip = 1;
+  // 按登录用户限流，防单账号滥用。
+  Bucket per_user = 2;
+  // 写接口的额外配额（发布、举报、发消息等）。
+  Bucket write_ops = 3;
+  // 桶的空闲回收时间，避免内存随 IP 数无界增长。
+  google.protobuf.Duration idle_ttl = 4;
+}
+
+// Docs OpenAPI 文档站。
+message Docs {
+  bool enabled = 1;
+  // 静态文件目录，包含 openapi.yaml 与 index.html。
+  string dir = 2;
+  // 挂载路径前缀。
+  string path = 3;
+}

@@ -1,0 +1,17 @@
+# 前端/第三方 TS 客户端生成模板。
+#
+# 说明：本项目对外是 kratos 依据 google.api.http 注解暴露的 REST/JSON 接口，
+# 并非 Connect 协议，因此 Web 前端的主用 SDK 由 docs/openapi.yaml 经
+# openapi-typescript 生成（见 web/packages/api-sdk），路由与类型同源于 proto。
+#
+# 此模板面向需要 protobuf 原生类型或 gRPC-web 的消费方（如小程序原生、其他团队），
+# 使用 buf 远程插件，本地无需安装任何 protoc 插件。
+version: v2
+
+plugins:
+  # 远程插件：由 buf.build 托管执行，客户端零工具链
+  - remote: buf.build/bufbuild/es
+    out: ../web/packages/api-sdk/gen
+    opt:
+      - target=ts
+      - import_extension=none

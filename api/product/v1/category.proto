@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+package product.v1;
+
+option go_package = "github.com/fleamarket/api/product/v1;productv1";
+
+import "google/api/annotations.proto";
+import "buf/validate/validate.proto";
+import "common/v1/common.proto";
+
+// CategoryService 分类体系与校园地点字典。
+//
+// 分类是两级结构：一级用于导航分区，二级是商品实际挂载的叶子节点。
+// 不做更深层级——校园二手的品类有限，三级分类只会让用户在选择时迷路。
+service CategoryService {
+  // 查询完整分类树。公开接口，前端可长期缓存。
+  rpc ListCategories(ListCategoriesRequest) returns (ListCategoriesReply) {
+    option (google.api.http) = {get: "/v1/categories"};
+  }
+
+  // 查询某校区的面交地点。用于发布时选点与地图展示。
+  rpc ListPOIs(ListPOIsRequest) returns (ListPOIsReply) {
+    option (google.api.http) = {get: "/v1/campuses/{campus_id}/pois"};
+  }
+}
+
+message ListCategoriesRequest {
+  // 为 true 时只返回启用的分类。管理后台传 false 以查看全部。
+  bool enabled_only = 1;
+}
+
+message ListCategoriesReply {
+  // 一级分类，children 中携带其二级分类。
+  repeated Category categories = 1;
+}
+
+// Category 商品分类。
+message Category {
+  int64 category_id = 1;
+  // 父分类 ID。一级分类为 0。
+  int64 parent_id = 2;
+  string name = 3;
+  // 图标对象 key。
+  string icon_key = 4;
+  int32 sort = 5;
+  bool enabled = 6;
+  // 二级分类。仅一级分类的响应中填充。
+  repeated Category children = 7;
+}
+
+// POIType 校园地点类型，用于地图图标与筛选。
+enum POIType {
+  POI_TYPE_UNSPECIFIED = 0;
+  // 校门。
+  POI_TYPE_GATE = 1;
+  // 宿舍楼。
+  POI_TYPE_DORM = 2;
+  // 食堂。
+  POI_TYPE_CANTEEN = 3;
+  // 图书馆。
+  POI_TYPE_LIBRARY = 4;
+  // 教学楼。
+  POI_TYPE_TEACHING_BUILDING = 5;
+  // 快递点。
+  POI_TYPE_PARCEL_STATION = 6;
+  // 其他。
+  POI_TYPE_OTHER = 99;
+}
+
+message ListPOIsRequest {
+  int64 campus_id = 1 [(buf.validate.field).int64.gt = 0];
+  // 按类型筛选，留空返回全部。
+  repeated POIType types = 2;
+}
+
+message ListPOIsReply {
+  repeated POI pois = 1;
+}
+
+// POI 校园内的面交地点。
+//
+// 「距离」在本平台的实质是校区 + 校内地点的层级关系（doc.md §2.2），
+// 而非真实 GPS 围栏——同校区内步行可达，跨校区才需要考虑距离。
+message POI {
+  int64 poi_id = 1;
+  int64 campus_id = 2;
+  string name = 3;
+  POIType type = 4;
+  common.v1.GeoPoint location = 5;
+  // 是否为推荐地点。推荐地点通常是人流量大、有监控的公共区域，
+  // 面交安全性更高。
+  bool recommended = 6;
+}

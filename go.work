@@ -1,0 +1,27 @@
+go 1.26.0
+
+// 各 module 在对应任务中创建后追加：
+// use ./pkg
+// use ./cmd/dbctl
+// ...
+
+use ./pkg
+
+use ./api
+
+
+
+
+use ./app/user
+
+use ./cmd/dbctl
+
+use ./app/gateway
+
+use ./app/product
+
+use ./app/search
+
+use ./app/trade
+
+use ./app/review

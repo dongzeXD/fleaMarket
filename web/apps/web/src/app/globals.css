@@ -1,0 +1,87 @@
+@import 'tailwindcss';
+
+/*
+ * 设计令牌。
+ *
+ * Tailwind v4 用 CSS 变量定义主题，不再需要 tailwind.config.js。
+ * 断点沿用默认值（sm 640 / md 768 / lg 1024 / xl 1280 / 2xl 1536），
+ * 与 doc.md §10.2 的适配表一致。
+ */
+@theme {
+  --color-brand-50: oklch(0.97 0.02 155);
+  --color-brand-100: oklch(0.94 0.04 155);
+  --color-brand-500: oklch(0.62 0.15 155);
+  --color-brand-600: oklch(0.54 0.15 155);
+  --color-brand-700: oklch(0.46 0.13 155);
+
+  --color-surface: oklch(1 0 0);
+  --color-surface-muted: oklch(0.97 0.002 250);
+  --color-border-subtle: oklch(0.92 0.004 250);
+
+  /* 底部固定操作条的高度，供内容区预留 padding 使用。 */
+  --spacing-safe-bottom-bar: 3.5rem;
+}
+
+/* 暗色模式跟随系统偏好。 */
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-surface: oklch(0.21 0.006 250);
+    --color-surface-muted: oklch(0.26 0.006 250);
+    --color-border-subtle: oklch(0.33 0.008 250);
+  }
+}
+
+@layer base {
+  html {
+    /* 禁用 iOS 横屏时的自动字号放大，否则布局会错位。 */
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-surface);
+    color: oklch(0.25 0.01 250);
+    font-family:
+      system-ui,
+      -apple-system,
+      'PingFang SC',
+      'Microsoft YaHei',
+      sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    body {
+      color: oklch(0.93 0.005 250);
+    }
+  }
+
+  /*
+   * 键盘可达性：只在键盘导航时显示焦点环。
+   * 鼠标点击也显示会被设计方要求去掉，最后往往变成
+   * outline: none 而彻底牺牲无障碍。:focus-visible 两边都能满足。
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  /*
+   * 全面屏底部安全区。
+   * 固定在底部的操作条与 TabBar 必须加它，
+   * 否则在 iPhone 上会被 Home 指示条盖住一部分。
+   */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  /* 触控目标最小 44×44px（doc.md §10.2 的无障碍要求）。 */
+  .tap-target {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+}
